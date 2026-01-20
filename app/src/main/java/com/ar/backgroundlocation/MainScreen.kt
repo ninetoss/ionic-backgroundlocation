@@ -33,14 +33,14 @@ fun MainScreen() {
                     settings.cacheMode = WebSettings.LOAD_NO_CACHE
                     webViewClient = WebViewClient()
                     
-                    // Add Javascript Interface to handle start/stop from JS
+                    // Add Javascript Interface to handle start/stop and login from JS
                     addJavascriptInterface(WebAppInterface(ctx), "Android")
 
                     // Assign this WebView to the static reference in MainActivity
-                    // so LocationService can update it
                     MainActivity.webViewRef = this
                     
-                    loadUrl("file:///android_asset/leaflet_map.html")
+                    // CHANGED: Load login.html first instead of leaflet_map.html
+                    loadUrl("file:///android_asset/login.html")
                 }
             },
             modifier = Modifier.fillMaxSize()
@@ -61,5 +61,14 @@ class WebAppInterface(private val context: Context) {
         val intent = Intent(context, LocationService::class.java)
         intent.action = LocationService.ACTION_SERVICE_STOP
         context.startService(intent)
+    }
+
+    // ADDED: Method called from login.html upon success
+    @JavascriptInterface
+    fun onLoginSuccess() {
+        // Use the static reference to load the map page on the main thread
+        MainActivity.webViewRef?.post {
+            MainActivity.webViewRef?.loadUrl("file:///android_asset/leaflet_map.html")
+        }
     }
 }

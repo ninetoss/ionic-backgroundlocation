@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Login</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body { font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; background: #f0f0f0; }
+        .container { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); width: 80%; max-width: 300px; }
+        input { width: 100%; padding: 10px; margin: 10px 0; box-sizing: border-box; }
+        button { width: 100%; padding: 10px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        button:hover { background: #0056b3; }
+        .toggle { text-align: center; margin-top: 10px; color: blue; cursor: pointer; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2 id="title">Login</h2>
+    <input type="text" id="username" placeholder="Username" />
+    <input type="password" id="password" placeholder="Password" />
+    <button onclick="performAction()" id="actionBtn">Login</button>
+    <p class="toggle" onclick="toggleMode()" id="toggleText">Register instead</p>
+    <p id="msg" style="color: red; text-align: center;"></p>
+</div>
+
+<script>
+    let isLogin = true;
+    // CHANGE THIS IP TO YOUR SERVER ADDRESS
+    const BASE_URL = "https://dntservicetruck.co.th/android/"; 
+
+    function toggleMode() {
+        isLogin = !isLogin;
+        document.getElementById('title').innerText = isLogin ? "Login" : "Register";
+        document.getElementById('actionBtn').innerText = isLogin ? "Login" : "Register";
+        document.getElementById('toggleText').innerText = isLogin ? "Register instead" : "Login instead";
+    }
+
+    async function performAction() {
+        const user = document.getElementById('username').value;
+        const pass = document.getElementById('password').value;
+        const endpoint = isLogin ? "login.php" : "register.php";
+        
+        try {
+            const response = await fetch(BASE_URL + endpoint, {
+                method: 'POST',
+                body: JSON.stringify({ username: user, password: pass })
+            });
+            const result = await response.json();
+            // This part in your login.html is now correct because PHP returns "status": "success"
+            if (result.status === "success") {
+                if (isLogin) {
+                    if (window.Android) {
+                        window.Android.onLoginSuccess(); // This will now execute
+                    }
+                }
+                // ...
+            } else {
+                document.getElementById('msg').innerText = result.message;
+            }
+        } catch (error) {
+            document.getElementById('msg').innerText = "Network error: " + error.message;
+        }
+    }
+</script>
+</body>
+</html>

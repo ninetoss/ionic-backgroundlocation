@@ -53,12 +53,8 @@
         .toggle { text-align: center; margin-top: 10px; color: blue; cursor: pointer; }
 	</style>
 </head>
-
 <body>
 	<div id="map">
-		<!-- Side Panel left -->
-
-		<!-- Side Panel right -->
 		<div id="mySidepanelRight" class="sidepanel" aria-label="side panel" aria-hidden="false">
 			<div class="sidepanel-inner-wrapper">
 				<nav class="sidepanel-tabs-wrapper" aria-label="sidepanel tab navigation">
@@ -111,23 +107,22 @@
 				</nav>
 				<div class="sidepanel-content-wrapper">
 					<div class="sidepanel-content">
-
 						<div class="sidepanel-tab-content" data-tab-content="tab-1">
 							    <h4>Content 1</h4>					
-    <h2 id="title">
-        <a href="#" id="link-line1">line1coords</a><br>
-        <a href="#" id="link-line2">line2coords</a>
-    </h2>
+                                <h2 id="title">
+                                    <a href="#" id="link-line1">line1coords</a><br>
+                                    <a href="#" id="link-line2">line2coords</a>
+                                </h2>
 						</div>
 						<div class="sidepanel-tab-content" data-tab-content="tab-2"></div>
 						<div class="sidepanel-tab-content" data-tab-content="tab-3">
 							<h4>Content 3</h4>
-				    <h2 id="title">Login</h2>
-    <input type="text" id="username" placeholder="Username" />
-    <input type="password" id="password" placeholder="Password" />
-    <button onclick="performAction()" id="actionBtn">Login</button>
-    <p class="toggle" onclick="toggleMode()" id="toggleText">Register instead</p>
-    <p id="msg" style="color: red; text-align: center;"></p>
+				            <h2 id="title">Login</h2>
+                            <input type="text" id="username" placeholder="Username" />
+                            <input type="password" id="password" placeholder="Password" />
+                            <button onclick="performAction()" id="actionBtn">Login</button>
+                            <p class="toggle" onclick="toggleMode()" id="toggleText">Register instead</p>
+                            <p id="msg" style="color: red; text-align: center;"></p>
 						</div>
 						<div class="sidepanel-tab-content" data-tab-content="tab-4">
 							<h4>Content 4</h4>
@@ -167,9 +162,6 @@
 			</div>
 		</div>
 	</div>
-
-	<!-- Scripts -->
-
 	<script>
     const baseMap = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
@@ -181,84 +173,39 @@
       zoom: 9,
       rotate: true,
     })
-
-
-		const sidepanelRight = L.control.sidepanel('mySidepanelRight', {
-			panelPosition: 'right',
-			tabsPosition: 'top',
-			pushControls: true,
-			startTab: 'tab-1'
-		}).addTo(map);
-
-
-            let polylineMeasure = L.control.polylineMeasure ({position:'topleft', unit:'kilometres', showBearings:true, clearMeasurementsOnStop: false, showClearControl: true, showUnitControl: true})
-            polylineMeasure.addTo (map);
+	const sidepanelRight = L.control.sidepanel('mySidepanelRight', {
+		panelPosition: 'right',
+		tabsPosition: 'top',
+		pushControls: true,
+		startTab: 'tab-1'
+	}).addTo(map);
+    let polylineMeasure = L.control.polylineMeasure ({position:'topleft', unit:'kilometres', showBearings:true, clearMeasurementsOnStop: false, showClearControl: true, showUnitControl: true})
+    polylineMeasure.addTo (map);
     const boatingControl = L.control.boating().addTo(map);
-            // Some constant polyline coords:
-// Some constant polyline coords:
-            const line1coords = [
-                { lat: 13.156883186860703, lng: 100.95019531250003 },
-                { lat: 13.01436065310322, lng: 100.33520507812503 },
-                { lat: 13.391704731036587, lng: 100.17065429687503 }
-            ];
-            const line2coords = [
-                { lat: 13.880391767822505, lng: 100.67529296875003 },
-                { lat: 13.90556881196468, lng: 100.39038085937503 }
-            ];
-
-            // 1. REMOVED the automatic seed so map starts empty
-            // polylineMeasure.seed([line1coords]) 
-
-            // 2. Add Event Listener for Line 1
-            document.getElementById('link-line1').addEventListener('click', function(e){
-                e.preventDefault(); // Stop link from reloading page
-                polylineMeasure._clearAllMeasurements(); // Clear existing lines
-                polylineMeasure.seed([line1coords]);     // Draw Line 1
-            });
-
-            // 3. Add Event Listener for Line 2
-            document.getElementById('link-line2').addEventListener('click', function(e){
-                e.preventDefault(); // Stop link from reloading page
-                polylineMeasure._clearAllMeasurements(); // Clear existing lines
-                polylineMeasure.seed([line2coords]);     // Draw Line 2
-            });
-
+    // Some constant polyline coords:
+    const line1coords = [
+        { lat: 13.156883186860703, lng: 100.95019531250003 },
+        { lat: 13.01436065310322, lng: 100.33520507812503 },
+        { lat: 13.391704731036587, lng: 100.17065429687503 }
+    ];
+    const line2coords = [
+        { lat: 13.880391767822505, lng: 100.67529296875003 },
+        { lat: 13.90556881196468, lng: 100.39038085937503 }
+    ];
+    document.getElementById('link-line1').addEventListener('click', function(e){
+    e.preventDefault(); // Stop link from reloading page
+        polylineMeasure._clearAllMeasurements(); // Clear existing lines
+        polylineMeasure.seed([line1coords]);     // Draw Line 1
+    });
+    document.getElementById('link-line2').addEventListener('click', function(e){
+        e.preventDefault(); // Stop link from reloading page
+        polylineMeasure._clearAllMeasurements(); // Clear existing lines
+        polylineMeasure.seed([line2coords]);     // Draw Line 2
+    });
     // Make the control globally accessible
     window.boatingControl = boatingControl;
-// --- YouTube Video/Stream Loader ---
-    document.getElementById('youtube-input').addEventListener('keypress', function (e) {
-        if (e.key === 'Enter') {
-            const url = this.value;
-            const videoId = extractVideoID(url);
-            const container = document.getElementById('video-container');
-            
-            if (videoId) {
-                container.style.display = 'block';
-                // Using 'embed' is standard for both VOD and Live streams
-                container.innerHTML = `
-                    <iframe 
-                        width="100%" 
-                        height="100%" 
-                        src="https://www.youtube.com/embed/${videoId}?autoplay=1" 
-                        frameborder="0" 
-                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
-                        allowfullscreen>
-                    </iframe>`;
-            } else {
-                alert('Invalid YouTube URL. Please try again.');
-            }
-        }
-    });
-
-    // Helper to extract ID (Supports /live/, /watch?v=, and youtu.be/)
-    function extractVideoID(url) {
-        // Regex now includes 'live' to support your specific URL format
-        const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|live\/)([^#&?]*).*/;
-        const match = url.match(regExp);
-        return (match && match[2].length === 11) ? match[2] : false;
-    }
 	</script>
 </body>
 
-
 </html>
+

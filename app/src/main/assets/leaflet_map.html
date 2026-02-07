@@ -1,0 +1,1046 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.8.0/dist/leaflet.css"
+        integrity="sha512-hoalWLoI8r4UszCkZ5kL8vayOGVae1oxXe/2A4AO6J9+580uKHDO3JdHb7NzwwzK5xr/Fs0W40kiNHxM9vyTtQ=="
+        crossorigin="" />
+    <link rel="stylesheet" href="dist/leaflet-sidepanel.css">
+    <script src="https://unpkg.com/leaflet@1.8.0/dist/leaflet.js"
+        integrity="sha512-BB3hKbKWOc9Ez/TAwyWxNXeoV9c1v6FIeYiBieIWkpLjauysF18NzgR1MBNBXf8/KABdlkX68nAhlwcDFLGPCQ=="
+        crossorigin=""></script>
+    <script src="dist/leaflet-sidepanel.min.js"></script>
+    <link rel="stylesheet" href="./L.Control.Boating.css" />
+    <link rel="stylesheet" href="dist/Leaflet.PolylineMeasure.css">
+    <script src="dist/Leaflet.PolylineMeasure.js"></script>
+    <link href="style.css" rel="stylesheet">
+    <title></title>
+    <script src="dist/Maritime.js"></script>
+    <script src="dist/Maritimeline.js"></script>
+    <script src="dist/LandsZone.js"></script>
+    <script src="dist/ProvinceZone.js"></script>
+    <script src="dist/MarineProvince.js"></script>
+    <script src="dist/LineStrings.js"></script>
+    <script src="dist/MaritimeZone.js"></script>
+    <script src="dist/GetMarker.js"></script>
+    <style>
+        html,
+        body {
+            height: 100%;
+            width: 100%;
+            margin: 0;
+        }
+
+        #map {
+            width: 100%;
+            height: 100vh;
+        }
+
+        .sidepanel-content {
+            font-size: 1rem;
+        }
+
+        .sidepanel-content h1 {
+            margin-top: 0;
+            margin-bottom: 0;
+            line-height: 0.75;
+            width: 100%;
+        }
+
+        .sidepanel-content h4 {
+            margin-top: 0;
+            margin-bottom: 0;
+            line-height: 0.75;
+            width: 100%;
+        }
+
+        .sidepanel-content h5 {
+            margin-top: 0;
+            margin-bottom: 0;
+            line-height: 0.75;
+            width: 100%;
+        }
+
+        .sidepanel-content h6 {
+            margin-top: 0;
+            margin-bottom: 0;
+            line-height: 2;
+            width: 100%;
+        }
+
+        .sidepanel-content p {
+            margin-top: 0;
+            margin-bottom: 0;
+            line-height: 1;
+            width: 100%;
+        }
+
+        .sidepanel-content span {
+            margin-top: 0;
+            margin-bottom: 0;
+            line-height: 0.75;
+            width: 100%;
+        }
+
+        .sidepanel-content a {
+            text-decoration: none;
+            font-size: 1rem;
+        }
+    </style>
+    <script>
+        L.Control.Boating = L.Control.extend({
+
+            options: {
+                position: 'topleft',
+                legendPosition: 'bottomleft',
+                boatColor: '#3388ff',
+                lineColor1: '#3388ff',
+                lineColor2: '#3388ff',
+                circleColor: '#3388ff',
+                cacheLength: 4,
+            },
+
+            onAdd: function (map) {
+                const container = L.DomUtil.create('div', 'leaflet-bar leaflet-control')
+                const link = L.DomUtil.create('a', 'leaflet-bar-part leaflet-bar-part-single', container)
+                this.icon = L.DomUtil.create('span', 'leaflet-control-boating-arrow', link)
+                link.href = '#'
+
+                L.DomEvent.on(link, 'click', function (e) {
+                    L.DomEvent.stopPropagation(e)
+                    L.DomEvent.preventDefault(e)
+                    this.onClick()
+                }, this)
+
+                this.legend = L.control({
+                    position: this.options.legendPosition,
+                    lineColor1: this.options.lineColor1,
+                    lineColor2: this.options.lineColor2
+                })
+                this.legend.onAdd = function (map) {
+                    const container = L.DomUtil.create('div', 'leaflet-control leaflet-bar leaflet-control-boating-legend')
+                    container.innerHTML = `
+        <table>
+          <tbody>
+            <tr><td colspan="2" class="double" id="heading"></td></tr>
+            <tr><td colspan="2" class="double" id="knots"></td></tr>
+            <tr><th>lat</th><td id="lat"></td></tr>
+            <tr><th>lon</th><td id="lng"></td></tr>
+          </tbody>
+        </table>`
+                    this.heading = container.querySelector('#heading')
+                    this.knots = container.querySelector('#knots')
+                    this.lat = container.querySelector('#lat')
+                    this.lng = container.querySelector('#lng')
+                    return container
+                }
+
+                this.boat = L.marker([0, 0], {
+                    icon: L.divIcon({
+                        iconAnchor: [12.5, 12.5],
+                        iconSize: [25, 25],
+                        className: 'boat',
+                        html: `
+          <svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" id="boat-svg">
+            <path d="M 128 512 C 128 512 128 128 256 0 C 384 128 384 512 384 512 Z" fill="${this.options.boatColor}"/>
+          </svg>`,
+                    })
+                })
+                this.boat.on('add', function () {
+                    this.svg = this.getElement().querySelector('#boat-svg')
+                })
+
+                this.circle = L.circle([0, 0], {
+                    color: this.options.circleColor,
+                    stroke: false,
+                })
+
+                this.line = L.polyline([[0, 0], [0, 0]], {
+                    color: this.options.lineColor2,
+                    lineCap: 'square',
+                })
+
+                this.linebg = L.polyline([[0, 0], [0, 0]], {
+                    color: this.options.lineColor1,
+                })
+
+                // Create the track polyline
+                this.track = L.polyline([], {
+                    color: '#3388ff',
+                    weight: 3
+                });
+
+                return container
+            },
+
+            cosD: function (deg) {
+                return Math.cos(deg * Math.PI / 180)
+            },
+
+            sinD: function (deg) {
+                return Math.sin(deg * Math.PI / 180)
+            },
+
+            atan2D: function (x, y) {
+                return ((Math.atan2(x, y) * 180 / Math.PI) + 360) % 360
+            },
+
+            isRequesting: function () {
+                return this.icon.classList.contains('requesting')
+            },
+
+            isLocating: function () {
+                return this.icon.classList.contains('locating')
+            },
+
+            isFollowing: function () {
+                return this.icon.classList.contains('following')
+            },
+
+            onClick: function () {
+                if (this.isFollowing()) {
+                    this.stop()
+                }
+                else if (this.isLocating()) {
+                    this._map.panTo(this.lastPosition.latlng)
+                    this.follow()
+                }
+                else if (!this.isRequesting()) {
+                    this.request()
+                }
+            },
+
+            onDragStart: function () {
+                if (this.isFollowing()) {
+                    this.unfollow()
+                }
+            },
+
+            onMoveEnd: function () {
+                if ((this.isLocating() || this.isFollowing()) && this.lastPosition) {
+                    this.updateLine(this.lastPosition)
+                }
+            },
+
+            request: function () {
+                this._map.on('moveend', this.onMoveEnd, this)
+                this._map.on('dragstart', this.onDragStart, this)
+
+                this.icon.classList.remove('following')
+                this.icon.classList.remove('locating')
+                this.icon.classList.add('requesting')
+
+                if (window.Android && window.Android.startTracking) {
+                    window.Android.startTracking();
+                }
+            },
+
+            follow: function () {
+                this._map.options.scrollWheelZoom = 'center'
+                this._map.options.doubleClickZoom = 'center'
+                this.icon.classList.remove('requesting')
+                this.icon.classList.remove('locating')
+                this.icon.classList.add('following')
+            },
+
+            unfollow: function () {
+                this._map.options.scrollWheelZoom = true
+                this._map.options.doubleClickZoom = true
+                this.icon.classList.remove('requesting')
+                this.icon.classList.remove('following')
+                this.icon.classList.add('locating')
+            },
+
+            stop: function () {
+                this._map.off('moveend', this.onMoveEnd, this)
+                this._map.off('dragstart', this.onDragStart, this)
+                this._map.options.scrollWheelZoom = true
+                this._map.options.doubleClickZoom = true
+                this.icon.classList.remove('requesting')
+                this.icon.classList.remove('following')
+                this.icon.classList.remove('locating')
+
+                if (this.legend && this.legend._map) {
+                    this._map.removeControl(this.legend)
+                }
+                this._map.removeLayer(this.circle)
+                this._map.removeLayer(this.linebg)
+                this._map.removeLayer(this.line)
+                this._map.removeLayer(this.boat)
+
+                // Remove track and clear points
+                this._map.removeLayer(this.track)
+                this.track.setLatLngs([]);
+
+                if (window.Android && window.Android.stopTracking) {
+                    window.Android.stopTracking();
+                }
+            },
+
+            onLocationFound: function (e) {
+                e.latlngDMS = this.latlngDMS(e)
+                e.smooth = this.smoothMotion(e)
+
+                if (this.isRequesting()) {
+                    this._map.addControl(this.legend)
+                    this._map.addLayer(this.circle)
+                    this._map.addLayer(this.linebg)
+                    this._map.addLayer(this.line)
+                    this._map.addLayer(this.boat)
+                    this._map.addLayer(this.track) // Add track to map
+                    this.follow()
+                }
+                if (this.isFollowing()) {
+                    this._map.panTo(e.latlng)
+                }
+                this.updateLegend(e)
+                this.updateCircle(e)
+                this.updateLine(e)
+                this.updateBoat(e)
+
+                // Add point to track
+                this.track.addLatLng(e.latlng);
+
+                this.lastPosition = e
+            },
+
+            onLocationError: function (e) {
+                console.error(e)
+                if (e.code === 1) {
+                    alert('unlock geolocation please')
+                    this.stop()
+                }
+            },
+
+            updateCircle: function (e) {
+                this.circle.setLatLng(e.latlng)
+                this.circle.setRadius(e.accuracy)
+            },
+
+            updateBoat: function (e) {
+                const heading = e.smooth.heading
+                this.boat.svg.style.transform = 'rotate(' + heading + 'deg)'
+                this.boat.setLatLng(e.latlng)
+            },
+
+            updateLine: function (e) {
+                const zoom = this._map.getZoom()
+                const mapBounds = this._map.getBounds()
+                const heading = e.smooth.heading
+                const speed = e.smooth.speed
+
+                const length = Math.max(
+                    mapBounds.getNorthWest().distanceTo(e.latlng),
+                    mapBounds.getNorthEast().distanceTo(e.latlng),
+                    mapBounds.getSouthEast().distanceTo(e.latlng),
+                    mapBounds.getSouthWest().distanceTo(e.latlng),
+                )
+                const lengthDeg = length * 360 / 40000000
+                const dirPoint = L.latLng(
+                    e.latlng.lat + (lengthDeg * this.cosD(heading)),
+                    e.latlng.lng + (lengthDeg * this.sinD(heading) / this.cosD(e.latlng.lat)),
+                )
+                this.line.setLatLngs([e.latlng, dirPoint])
+                this.linebg.setLatLngs([e.latlng, dirPoint])
+
+                const metersPerPixel = 40000000 * this.cosD(e.latlng.lat) / (256 * Math.pow(2, zoom))
+                const pixelsPerHour = speed / metersPerPixel * 3600
+                this.line.setStyle({
+                    dashArray: pixelsPerHour + ',' + pixelsPerHour,
+                    dashOffset: pixelsPerHour,
+                })
+            },
+
+            updateLegend: function (e) {
+                const nautic = 40000 / 360 / 60
+                const heading = Math.round(e.smooth.heading)
+                const speed = Math.round(e.smooth.speed * 36 / nautic) / 10
+                this.legend.heading.innerHTML = heading + ' °'
+                this.legend.knots.innerHTML = speed + ' kts'
+                this.legend.lat.innerHTML = e.latlngDMS.lat
+                this.legend.lng.innerHTML = e.latlngDMS.lng
+            },
+
+            latlngDMS: function (e) {
+                function dms(coord) {
+                    let float = Math.abs(coord)
+                    let d = Math.floor(float)
+                    float = (float - d) * 60
+                    let m = Math.floor(float)
+                    float = (float - m) * 60
+                    let s = Math.round(float)
+                    if (s === 60) {
+                        m = m + 1
+                        s = 0
+                    }
+                    if (m === 60) {
+                        d = d + 1
+                        m = 0
+                    }
+                    if (s < 10) {
+                        s = '0' + s
+                    }
+                    if (m < 10) {
+                        m = '0' + m
+                    }
+                    return d + '&deg; ' + m + '&apos; ' + s + '&quot; '
+                }
+                return {
+                    lat: dms(e.latlng.lat) + ((e.latlng.lat > 0) ? 'N' : 'S'),
+                    lng: dms(e.latlng.lng) + ((e.latlng.lng > 0) ? 'E' : 'W'),
+                }
+            },
+
+            smoothMotion: (function () {
+                const cache = []
+                return function (e) {
+                    cache.push(e)
+                    if (cache.length > this.options.cacheLength) {
+                        cache.shift()
+                    }
+                    const sumX = cache.reduce(
+                        (sum, e) => sum + (e.speed || 0) * this.cosD(e.heading || 0), 0
+                    )
+                    const sumY = cache.reduce(
+                        (sum, e) => sum + (e.speed || 0) * this.sinD(e.heading || 0), 0
+                    )
+                    return {
+                        speed: Math.sqrt(sumX ** 2 + sumY ** 2) / cache.length,
+                        heading: this.atan2D(sumY, sumX),
+                    }
+                }
+            })()
+        })
+        L.control.boating = function (options) {
+            return new L.Control.Boating(options)
+        }
+        // Global function to receive location from Android
+        function receiveAndroidLocation(lat, lng, bearing, speed) {
+            if (window.boatingControl) {
+                const locationEvent = {
+                    latlng: L.latLng(lat, lng),
+                    accuracy: 10, // Example value, adjust as needed
+                    heading: bearing,
+                    speed: speed
+                };
+                window.boatingControl.onLocationFound(locationEvent);
+            }
+        }
+    </script>
+</head>
+
+<body>
+    <div id="map">
+        <div id="mySidepanelRight" class="sidepanel" aria-label="side panel" aria-hidden="false">
+            <div class="sidepanel-inner-wrapper">
+                <nav class="sidepanel-tabs-wrapper" aria-label="sidepanel tab navigation">
+                    <ul class="sidepanel-tabs">
+                        <li class="sidepanel-tab">
+                            <a href="#" class="sidebar-tab-link" role="tab" data-tab-link="tab-1">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor"
+                                    class="bi bi-list" viewBox="0 0 16 16">
+                                    <path fill-rule="evenodd"
+                                        d="M2.5 12a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5zm0-4a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5zm0-4a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5z" />
+                                </svg>
+                            </a>
+                        </li>
+                        <li class="sidepanel-tab">
+                            <a href="#" class="sidebar-tab-link" role="tab" data-tab-link="tab-2">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor"
+                                    class="bi bi-geo" viewBox="0 0 16 16">
+                                    <path fill-rule="evenodd"
+                                        d="M8 1a3 3 0 1 0 0 6 3 3 0 0 0 0-6zM4 4a4 4 0 1 1 4.5 3.969V13.5a.5.5 0 0 1-1 0V7.97A4 4 0 0 1 4 3.999zm2.493 8.574a.5.5 0 0 1-.411.575c-.712.118-1.28.295-1.655.493a1.319 1.319 0 0 0-.37.265.301.301 0 0 0-.057.09V14l.002.008a.147.147 0 0 0 .016.033.617.617 0 0 0 .145.15c.165.13.435.27.813.395.751.25 1.82.414 3.024.414s2.273-.163 3.024-.414c.378-.126.648-.265.813-.395a.619.619 0 0 0 .146-.15.148.148 0 0 0 .015-.033L12 14v-.004a.301.301 0 0 0-.057-.09 1.318 1.318 0 0 0-.37-.264c-.376-.198-.943-.375-1.655-.493a.5.5 0 1 1 .164-.986c.77.127 1.452.328 1.957.594C12.5 13 13 13.4 13 14c0 .426-.26.752-.544.977-.29.228-.68.413-1.116.558-.878.293-2.059.465-3.34.465-1.281 0-2.462-.172-3.34-.465-.436-.145-.826-.33-1.116-.558C3.26 14.752 3 14.426 3 14c0-.599.5-1 .961-1.243.505-.266 1.187-.467 1.957-.594a.5.5 0 0 1 .575.411z" />
+                                </svg>
+                            </a>
+                        </li>
+                        <li class="sidepanel-tab">
+                            <a href="#" class="sidebar-tab-link" role="tab" data-tab-link="tab-3">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor"
+                                    class="bi bi-geo-alt" viewBox="0 0 16 16">
+                                    <path
+                                        d="M12.166 8.94c-.524 1.062-1.234 2.12-1.96 3.07A31.493 31.493 0 0 1 8 14.58a31.481 31.481 0 0 1-2.206-2.57c-.726-.95-1.436-2.008-1.96-3.07C3.304 7.867 3 6.862 3 6a5 5 0 0 1 10 0c0 .862-.305 1.867-.834 2.94zM8 16s6-5.686 6-10A6 6 0 0 0 2 6c0 4.314 6 10 6 10z" />
+                                    <path d="M8 8a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm0 1a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" />
+                                </svg>
+                            </a>
+                        </li>
+                        <li class="sidepanel-tab">
+                            <a href="#" class="sidebar-tab-link" role="tab" data-tab-link="tab-4">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor"
+                                    class="bi bi-bookmarks" viewBox="0 0 16 16">
+                                    <path
+                                        d="M2 4a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v11.5a.5.5 0 0 1-.777.416L7 13.101l-4.223 2.815A.5.5 0 0 1 2 15.5V4zm2-1a1 1 0 0 0-1 1v10.566l3.723-2.482a.5.5 0 0 1 .554 0L11 14.566V4a1 1 0 0 0-1-1H4z" />
+                                    <path
+                                        d="M4.268 1H12a1 1 0 0 1 1 1v11.768l.223.148A.5.5 0 0 0 14 13.5V2a2 2 0 0 0-2-2H6a2 2 0 0 0-1.732 1z" />
+                                </svg>
+                            </a>
+                        </li>
+                        <li class="sidepanel-tab">
+                            <a href="#" class="sidebar-tab-link" role="tab" data-tab-link="tab-5">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor"
+                                    class="bi bi-gear" viewBox="0 0 16 16">
+                                    <path
+                                        d="M8 4.754a3.246 3.246 0 1 0 0 6.492 3.246 3.246 0 0 0 0-6.492zM5.754 8a2.246 2.246 0 1 1 4.492 0 2.246 2.246 0 0 1-4.492 0z" />
+                                    <path
+                                        d="M9.796 1.343c-.527-1.79-3.065-1.79-3.592 0l-.094.319a.873.873 0 0 1-1.255.52l-.292-.16c-1.64-.892-3.433.902-2.54 2.541l.159.292a.873.873 0 0 1-.52 1.255l-.319.094c-1.79.527-1.79 3.065 0 3.592l.319.094a.873.873 0 0 1 .52 1.255l-.16.292c-.892 1.64.901 3.434 2.541 2.54l.292-.159a.873.873 0 0 1 1.255.52l.094.319c.527 1.79 3.065 1.79 3.592 0l.094-.319a.873.873 0 0 1 1.255-.52l.292.16c1.64.893 3.434-.902 2.54-2.541l-.159-.292a.873.873 0 0 1 .52-1.255l.319-.094c1.79-.527 1.79-3.065 0-3.592l-.319-.094a.873.873 0 0 1-.52-1.255l.16-.292c.893-1.64-.902-3.433-2.541-2.54l-.292.159a.873.873 0 0 1-1.255-.52l-.094-.319zm-2.633.283c.246-.835 1.428-.835 1.674 0l.094.319a1.873 1.873 0 0 0 2.693 1.115l.291-.16c.764-.415 1.6.42 1.184 1.185l-.159.292a1.873 1.873 0 0 0 1.116 2.692l.318.094c.835.246.835 1.428 0 1.674l-.319.094a1.873 1.873 0 0 0-1.115 2.693l.16.291c.415.764-.42 1.6-1.185 1.184l-.291-.159a1.873 1.873 0 0 0-2.693 1.116l-.094.318c-.246.835-1.428.835-1.674 0l-.094-.319a1.873 1.873 0 0 0-2.692-1.115l-.292.16c-.764.415-1.6-.42-1.184-1.185l.159-.291A1.873 1.873 0 0 0 1.945 8.93l-.319-.094c-.835-.246-.835-1.428 0-1.674l.319-.094A1.873 1.873 0 0 0 3.06 4.377l-.16-.292c-.415-.764.42-1.6 1.185-1.184l.292.159a1.873 1.873 0 0 0 2.692-1.115l.094-.319z" />
+                                </svg>
+                            </a>
+                        </li>
+                    </ul>
+                </nav>
+                <div class="sidepanel-content-wrapper">
+                    <div class="sidepanel-content">
+                        <div class="sidepanel-tab-content" data-tab-content="tab-5">
+                            <h4>Tracking</h4>
+                            <p>Lorem Ipsum is simply dummy text of the printing and typesetting industry. </p>
+                            <a href="#">Read More</a>
+                            <hr>
+                            <input type="text" id="mission" name="mission" placeholder="ภารกิจ" required
+                                style="width: 95%; padding: 8px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px;">
+                            <input type="text" id="distance" name="distance" placeholder="ระยะทาง(ไมล์ทะเล)" required
+                                style="width: 95%; padding: 8px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px;">
+                            <input type="text" id="speed" name="speed" placeholder="ความเร็วเดินทาง(ไมล์ทะเล/ชั่วโมง)"
+                                style="width: 95%; padding: 8px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px;"
+                                onkeyup="sum();" required>
+                            <input type="้text" id="times" name="times" placeholder="ระยะเวลา(นาที)"
+                                style="width: 95%; padding: 8px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px;"
+                                onkeyup="sum();" required>
+                            <input type="text" id="totalMinutes" name="totalMinutes" placeholder="ระยะเวลา(ชั่วโมง)"
+                                style="width: 95%; padding: 8px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px;"
+                                onkeyup="sum();" required>
+                            <input type="text" id="consumption" name="consumption"
+                                placeholder="อัตราการสิ้นเปลือง(ชั่วโมง/ลิตร)"
+                                style="width: 95%; padding: 8px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px;"
+                                onkeyup="sum();" required>
+                            <input type="text" id="fuel" name="fuel" placeholder="น้ำมันเชื้อเพลิง(ลิตร)"
+                                style="width: 95%; padding: 8px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px;"
+                                required>
+                            <button onclick="savePolygons()"
+                                style="width:100%; margin-bottom:10px; padding: 8px; cursor: pointer; background-color: #4CAF50; color: white; border: none; border-radius: 4px;">
+                                Save Current Polygons
+                            </button>
+                        </div>
+                        <div class="sidepanel-tab-content" data-tab-content="tab-1">
+                            <h4>Line Coords</h4>
+                            <p>Lorem Ipsum is simply dummy text of the printing and typesetting industry. </p>
+                            <a href="#">Read More</a>
+                            <hr>
+                            <div class="blog-category_block">
+                                <ul id="report-list-container"></ul>
+                            </div>
+                        </div>
+                        <div class="sidepanel-tab-content" data-tab-content="tab-2">
+                            <h4>YouTube Stream</h4>
+                            <p>Lorem Ipsum is simply dummy text of the printing and typesetting industry. </p>
+                            <a href="#">Read More</a>
+                            <hr>
+                            <input type="text" id="videoUrlInput"
+                                value="https://youtube.com/live/GJStirv-_hM?feature=share"
+                                style="width: 95%; padding: 8px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px;">
+                            <button id="toggleBtn" onclick="toggleVideo()"
+                                style="width: 100%; padding: 12px; background-color: #d32f2f; color: white; border: none; border-radius: 4px; font-weight: bold; cursor: pointer;">
+                                START
+                            </button>
+                            <div id="player-container" style="margin-top: 20px;">
+                                <div id="player"></div>
+                            </div>
+                        </div>
+                        <script>
+                            var tag = document.createElement('script');
+                            tag.src = "https://www.youtube.com/iframe_api";
+                            var firstScriptTag = document.getElementsByTagName('script')[0];
+                            firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+                            var player;
+                            var isPlaying = false;
+                            var currentVideoId = "";
+                            function extractVideoID(url) {
+                                var regExp = /^.*((youtu.be\/)|(v\/)|(\/u\/\w\/)|(embed\/)|(watch\?v=)|(live\/))([^#\&\?]*).*/;
+                                var match = url.match(regExp);
+                                return (match && match[8].length == 11) ? match[8] : false;
+                            }
+                            function toggleVideo() {
+                                var inputUrl = document.getElementById("videoUrlInput").value;
+                                var videoId = extractVideoID(inputUrl);
+                                var btn = document.getElementById("toggleBtn");
+                                if (!videoId) {
+                                    alert("Invalid YouTube URL");
+                                    return;
+                                }
+                                if (!player) {
+                                    player = new YT.Player('player', {
+                                        height: '240',
+                                        width: '100%',
+                                        videoId: videoId,
+                                        playerVars: {
+                                            'playsinline': 1, // Crucial for iOS/Android WebView
+                                            'origin': window.location.origin // Helps with Error 153
+                                        },
+                                        events: {
+                                            'onReady': onPlayerReady,
+                                            'onStateChange': onPlayerStateChange
+                                        }
+                                    });
+                                    return; // Wait for onPlayerReady to start
+                                }
+                                if (isPlaying) {
+                                    player.stopVideo(); // "Stop" resets the stream/video
+                                    isPlaying = false;
+                                    btn.innerText = "START";
+                                    btn.style.backgroundColor = "#d32f2f"; // Red
+                                } else {
+                                    if (currentVideoId !== videoId) {
+                                        player.loadVideoById(videoId);
+                                        currentVideoId = videoId;
+                                    } else {
+                                        player.playVideo();
+                                    }
+                                    isPlaying = true;
+                                    btn.innerText = "STOP";
+                                    btn.style.backgroundColor = "#333"; // Dark Grey
+                                }
+                            }
+                            function onPlayerReady(event) {
+                                currentVideoId = extractVideoID(document.getElementById("videoUrlInput").value);
+                                event.target.playVideo();
+                                isPlaying = true;
+                                var btn = document.getElementById("toggleBtn");
+                                btn.innerText = "STOP";
+                                btn.style.backgroundColor = "#333";
+                            }
+                            function onPlayerStateChange(event) {
+                                var btn = document.getElementById("toggleBtn");
+                                if (event.data == YT.PlayerState.PLAYING) {
+                                    isPlaying = true;
+                                    btn.innerText = "STOP";
+                                    btn.style.backgroundColor = "#333";
+                                } else if (event.data == YT.PlayerState.PAUSED || event.data == YT.PlayerState.ENDED) {
+                                    isPlaying = false;
+                                    btn.innerText = "START";
+                                    btn.style.backgroundColor = "#d32f2f";
+                                }
+                            }
+                        </script>
+                        <div class="sidepanel-tab-content" data-tab-content="tab-3">
+                            <h4>Live Broadcast</h4>
+                            <p>Lorem Ipsum is simply dummy text of the printing and typesetting industry. </p>
+                            <a href="#">Read More</a>
+                            <hr>
+                            <input type="text" id="streamUrl"
+                                value="rtmp://a.rtmp.youtube.com/live2/rv7y-2ezd-cgwy-3u2t-det0"
+                                style="width: 95%; padding: 8px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px;">
+                            <button id="toggleBtnd" onclick="toggleStream()"
+                                style="width: 100%; padding: 12px; background-color: #28a745; color: white; border: none; border-radius: 4px; font-weight: bold; cursor: pointer;">
+                                START STREAMING
+                            </button>
+                            <div id="streamStatus"
+                                style="margin-top: 20px; padding: 10px; background: #f8f9fa; border-left: 4px solid #007bff; font-size: 0.9rem;">
+                                Status: Ready
+                            </div>
+                        </div>
+                        <script>
+                            let isStreaming = false;
+                            function toggleStream() {
+                                const btn = document.getElementById('toggleBtnd');
+                                const url = document.getElementById('streamUrl').value;
+                                const statusDiv = document.getElementById('streamStatus');
+                                if (!isStreaming) {
+                                    if (url && window.Android) {
+                                        statusDiv.innerText = "Status: Initializing...";
+                                        window.Android.startStreaming(url);
+                                        btn.innerText = "STOP STREAMING";
+                                        btn.style.backgroundColor = "#dc3545";
+                                        isStreaming = true;
+                                    } else {
+                                        alert("URL is empty or App Interface missing.");
+                                    }
+                                } else {
+                                    if (window.Android) window.Android.stopStreaming();
+                                    btn.innerText = "START STREAMING";
+                                    btn.style.backgroundColor = "#28a745";
+                                    isStreaming = false;
+                                }
+                            }
+                            function updateStreamStatus(status) {
+                                document.getElementById('streamStatus').innerText = status;
+                                if (status.includes("Failed") || status.includes("Disconnected") || status.includes("Stopped") || status.includes("Error")) {
+                                    const btn = document.getElementById('toggleBtnd');
+                                    btn.innerText = "START STREAMING";
+                                    btn.style.backgroundColor = "#28a745";
+                                    isStreaming = false;
+                                } else if (status.includes("Live")) {
+                                    const btn = document.getElementById('toggleBtnd');
+                                    btn.innerText = "STOP STREAMING";
+                                    btn.style.backgroundColor = "#dc3545";
+                                    isStreaming = true;
+                                }
+                            }
+                        </script>
+                        <div class="sidepanel-tab-content" data-tab-content="tab-4">
+                            <h4>Username</h4>
+                            <p>Lorem Ipsum is simply dummy text of the printing and typesetting industry. </p>
+                            <a href="#">Read More</a>
+                            <hr>
+                            <div id="userInfo"></div>
+                            <script>
+                                document.addEventListener("DOMContentLoaded", () => {
+                                    const name = Android.getUserName();
+                                    const password = Android.getUserPassword();
+                                    document.getElementById("userInfo").innerHTML =
+                                        `<b>Username:</b> ${name}<br><b>Password:</b> ${password}`;
+                                });
+                            </script>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="sidepanel-toggle-container">
+                <button class="sidepanel-toggle-button" type="button" aria-label="toggle side panel"></button>
+            </div>
+        </div>
+    </div>
+    <script>
+        var myStyle = {
+            color: '#d3eff8',
+            weight: 3,
+            opacity: 1
+        };
+        var myLineStringStyle = {
+            color: '#d3eff8',
+            weight: 3,
+            opacity: 1
+        };
+        var MarineStyle = {
+            color: '#000000',
+            weight: 2,
+            opacity: 1,
+            fillColor: '#1a3661',
+            fillOpacity: 1
+        };
+        var ProvinceStyle = {
+            color: '#000000',
+            weight: 1,
+            opacity: 1
+        };
+        var LandStyle = {
+            color: '#ffffff',
+            weight: 1,
+            opacity: 1,
+            fillColor: '#ffffff',
+            fillOpacity: 1
+        };
+        var MaritimeStyle = {
+            color: '#000000',
+            weight: 1
+        };
+        var ZoneFreeStyle = {
+            color: '#000000',
+            weight: 1,
+            fillColor: '#ffffff',
+            opacity: 1,
+            fillOpacity: 1
+        };
+        var ZoneAreaStyle = {
+            color: '#000000',
+            weight: 1,
+            fillColor: '#c1f2f4',
+            opacity: 1,
+            fillOpacity: 1
+        };
+        var ZoneOutStyle = {
+            color: '#000000',
+            weight: 1,
+            fillColor: '#cdf5eb',
+            opacity: 1,
+            fillOpacity: 1
+        };
+        var ZoneInStyle = {
+            color: '#000000',
+            weight: 1,
+            fillColor: '#d3eff8',
+            opacity: 1,
+            fillOpacity: 1
+        };
+        var MaritimeStyle2 = {
+            color: '#000000',
+            weight: 1
+        };
+        var ZoneFreeStyle2 = {
+            color: '#000000',
+            weight: 1
+        };
+        var ZoneAreaStyle2 = {
+            color: '#000000',
+            weight: 1
+        };
+        var ZoneOutStyle2 = {
+            color: '#000000',
+            weight: 1
+        };
+        var ZoneInStyle2 = {
+            color: '#000000',
+            weight: 1
+        };
+        const LandZone = L.geoJSON(landzone, { style: LandStyle });
+        const ProvinceZone = L.geoJSON(provincezone, { style: ProvinceStyle });
+        const MarineZone = L.geoJSON(marinezone, { style: MarineStyle });
+        const StringLine = L.geoJSON(myLines, { style: myStyle });
+        const myStringLine = L.geoJSON(myLineString, { style: myLineStringStyle });
+        const MaritimeIn = L.geoJSON(markersLayerIn, { style: ZoneInStyle });
+        const MaritimeOut = L.geoJSON(markersLayerOut, { style: ZoneOutStyle });
+        const MaritimeArea = L.geoJSON(markersLayerArea, { style: ZoneAreaStyle });
+        const MaritimeFree = L.geoJSON(markersLayerFree, { style: ZoneFreeStyle });
+        const Maritimeline = L.geoJSON(maritimeline, { style: MaritimeStyle });
+        const MaritimeIn2 = L.geoJSON(markersLayerIn, { style: ZoneInStyle2 });
+        const MaritimeOut2 = L.geoJSON(markersLayerOut, { style: ZoneOutStyle2 });
+        const MaritimeArea2 = L.geoJSON(markersLayerArea, { style: ZoneAreaStyle2 });
+        const MaritimeFree2 = L.geoJSON(markersLayerFree, { style: ZoneFreeStyle2 });
+        const Maritimeline2 = L.geoJSON(maritimeline, { style: MaritimeStyle2 });
+        const template2 = L.layerGroup([Maritimeline2, MaritimeIn2, MaritimeOut2, MaritimeFree2, MaritimeArea2]);
+        const template = L.layerGroup([ProvinceZone, StringLine, myStringLine, MarineZone, LandZone, Maritimeline, MaritimeIn, MaritimeOut, MaritimeFree, MaritimeArea]);
+        const baseMap = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png')
+        const seaMarks = L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png')
+        const google = L.tileLayer('http://www.google.cn/maps/vt?lyrs=s@189&gl=cn&x={x}&y={y}&z={z}', {
+            maxZoom: 18,
+            attribution: 'google'
+        });
+        const map = L.map('map', {
+            center: [13.20, 100.30],
+            layers: [baseMap, seaMarks, template2],
+            zoom: 9,
+            rotate: true,
+        })
+        const overlays = {
+            'รูปแบบแผนที่': template,
+            'อาณาเขตทางทะเล': template2
+        };
+        const baseLayers = {
+            'มุมมองถนน': baseMap,
+            'ดาวเทียม': google
+        };
+        const layerControl = L.control.layers(baseLayers, overlays).addTo(map);
+        const boatingControl = L.control.boating().addTo(map);
+        window.boatingControl = boatingControl;
+        const sidepanelRight = L.control.sidepanel('mySidepanelRight', {
+            panelPosition: 'right',
+            tabsPosition: 'top',
+            pushControls: true,
+            startTab: 'tab-1'
+        }).addTo(map);
+        let polylineMeasure = L.control.polylineMeasure({
+            position: 'topleft',
+            unit: 'nauticalmiles',
+            clearMeasurementsOnStop: false,
+            showClearControl: true,
+            showUnitControl: true,
+            showBearings: true
+        });
+        polylineMeasure.addTo(map);
+        var calcAngle = function (p1, p2, direction) {
+            var lat1 = p1.lat / 180 * Math.PI;
+            var lat2 = p2.lat / 180 * Math.PI;
+            var lng1 = p1.lng / 180 * Math.PI;
+            var lng2 = p2.lng / 180 * Math.PI;
+            var y = Math.sin(lng2 - lng1) * Math.cos(lat2);
+            var x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(lng2 - lng1);
+            if (direction === "inbound") {
+                var brng = (Math.atan2(y, x) * 180 / Math.PI + 180).toFixed(0);
+            } else {
+                var brng = (Math.atan2(y, x) * 180 / Math.PI + 360).toFixed(0);
+            }
+            return (brng % 360);
+        }
+        function debugevent(e) {
+            var coords = polylineMeasure._currentLine.circleCoords;
+            var lastInd = coords.length - 1;
+            if (lastInd > 0) {
+                var outb = calcAngle(coords[lastInd - 1], coords[lastInd], 'outbound');
+                var inb = calcAngle(coords[lastInd], coords[lastInd - 1], 'inbound');
+            }
+        }
+        map.on('polylinemeasure:add', (e) => {
+            var coords = polylineMeasure._currentLine.circleCoords;
+            var lastInd = coords.length - 1;
+        });
+        map.on("polylinemeasure:change", (currentLine) => {
+            var coords = polylineMeasure._currentLine.circleCoords;
+            var lastInd = coords.length - 1;
+        });
+        var currentSessionLines = [];
+        map.on("polylinemeasure:finish", (currentLine) => {
+            var polylinedistance = currentLine.distance;
+            if (document.getElementById('distance')) {
+                document.getElementById('distance').value = (polylinedistance / 1852).toFixed(2);
+            }
+            var coordsCopy = currentLine.circleCoords.map(p => ({ lat: p.lat, lng: p.lng }));
+            currentSessionLines.push(coordsCopy);
+        });
+        function sum() {
+            var dist = parseFloat(document.getElementById('distance').value) || 0;
+            var speed = parseFloat(document.getElementById('speed').value) || 0;
+            var consumption = parseFloat(document.getElementById('consumption').value) || 0;
+            if (speed === 0) {
+                document.getElementById('times').value = "";
+                document.getElementById('fuel').value = "";
+                // Clear totalMinutes if speed is 0
+                if (document.getElementById('totalMinutes')) {
+                    document.getElementById('totalMinutes').value = "";
+                }
+                return;
+            }
+            var timeInHours = dist / speed;
+            var totalMinutes = timeInHours * 60;
+            var fuelNeeded = consumption * timeInHours;
+            var totalSeconds = timeInHours * 3600;
+            var days = Math.floor(totalSeconds / 86400);
+            var hours = Math.floor((totalSeconds % 86400) / 3600);
+            var minutes = Math.floor((totalSeconds % 3600) / 60);
+            var seconds = Math.round(totalSeconds % 60);
+            var timeString = "";
+            if (days > 0) { timeString += days + "d "; }
+            if (hours > 0 || days > 0) { timeString += hours + "h "; }
+            timeString += minutes + "m " + seconds + "s";
+            document.getElementById('times').value = timeString;
+            document.getElementById('fuel').value = fuelNeeded.toFixed(2);
+            if (document.getElementById('totalMinutes')) {
+                document.getElementById('totalMinutes').value = totalMinutes.toFixed(2);
+            }
+        }
+        function savePolygons() {
+            var missionName = document.getElementById('mission').value; // Using 'lat' as ID per your request
+            var dist = document.getElementById('distance').value;
+            var timeVal = document.getElementById('times').value;
+            var totalMinutesVal = document.getElementById('totalMinutes').value;
+            var fuelVal = document.getElementById('fuel').value;
+            var newReport = {
+                id: Date.now(),
+                mission: missionName,
+                distance: dist,
+                times: timeVal,
+                totalMinutes: totalMinutesVal,
+                fuel: fuelVal,
+                timestamp: new Date().toLocaleString(),
+                lines: currentSessionLines
+            };
+            var savedReports = JSON.parse(localStorage.getItem('savedPolygonReports') || '[]');
+            savedReports.push(newReport);
+            localStorage.setItem('savedPolygonReports', JSON.stringify(savedReports));
+            currentSessionLines = [];
+            if (polylineMeasure && polylineMeasure.clearAll) {
+                polylineMeasure.clearAll();
+            }
+            document.getElementById('mission').value = "";
+            document.getElementById('distance').value = "";
+            document.getElementById('speed').value = "";
+            document.getElementById('times').value = "";
+            document.getElementById('totalMinutes').value = "";
+            document.getElementById('consumption').value = "";
+            document.getElementById('fuel').value = "";
+            displayReports();
+        }
+        function displayReports() {
+            var container = document.getElementById('report-list-container');
+            if (!container) return;
+            container.innerHTML = '';
+            var savedReports = JSON.parse(localStorage.getItem('savedPolygonReports') || '[]');
+            for (var i = savedReports.length - 1; i >= 0; i--) {
+                (function (index) {
+                    var report = savedReports[index];
+                    var li = document.createElement('li');
+                    li.style.marginBottom = "15px";
+                    var anchor = document.createElement('a');
+                    anchor.href = '#';
+                    anchor.className = 'report-link';
+                    var missionTitle = document.createElement('h5');
+                    missionTitle.className = 'text-white text-uppercase m-b-20';
+                    missionTitle.textContent = report.mission; // e.g. "ดูแลความปลอดภัย..."
+                    anchor.appendChild(missionTitle);
+                    var table = document.createElement('table');
+                    table.setAttribute('width', '100%');
+                    var tbody = document.createElement('tbody');
+                    var tr = document.createElement('tr');
+                    function createInfoCell(label, value, unit) {
+                        var td = document.createElement('td');
+                        td.setAttribute('width', '30%');
+                        var spanLabel = document.createElement('span');
+                        spanLabel.className = 'text-white';
+                        spanLabel.textContent = label;
+                        var h1Value = document.createElement('h1');
+                        h1Value.className = 'm-b-20 text-white counter';
+                        h1Value.textContent = value;
+                        var h6Unit = document.createElement('h6');
+                        h6Unit.className = 'text-white text-uppercase m-b-20';
+                        h6Unit.textContent = unit;
+                        td.appendChild(spanLabel);
+                        td.appendChild(h1Value);
+                        td.appendChild(h6Unit);
+                        return td;
+                    }
+                    var tdDistance = createInfoCell('ระยะทาง', report.distance, 'ไมล์ทะเล');
+                    var tdDuration = createInfoCell('ระยะเวลา(นาที)', report.totalMinutes, report.times);
+                    var tdFuel = createInfoCell('น้ำมันเชื้อเพลิง', report.fuel, 'ลิตร');
+                    tr.appendChild(tdDistance);
+                    tr.appendChild(tdDuration);
+                    tr.appendChild(tdFuel);
+                    tbody.appendChild(tr);
+                    table.appendChild(tbody);
+                    anchor.appendChild(table);
+                    var delBtn = document.createElement('button');
+                    delBtn.className = 'delete-btn';
+                    delBtn.textContent = 'Delete';
+                    Object.assign(delBtn.style, {
+                        marginTop: '5px',
+                        padding: '5px 10px',
+                        backgroundColor: 'rgb(220, 53, 69)',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '3px',
+                        cursor: 'pointer',
+                        fontSize: '0.8rem'
+                    });
+                    anchor.appendChild(delBtn);
+                    anchor.onclick = function (e) {
+                        if (e.target === delBtn) return;
+                        e.preventDefault();
+                        if (typeof loadReportOnMap === 'function') {
+                            loadReportOnMap(report.lines);
+                        }
+                    };
+                    delBtn.onclick = function (e) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (typeof deleteReport === 'function') {
+                            deleteReport(index);
+                        }
+                    };
+                    li.appendChild(anchor);
+                    container.appendChild(li);
+                })(i);
+            }
+        }
+        function deleteReport(index) {
+            var savedReports = JSON.parse(localStorage.getItem('savedPolygonReports') || '[]');
+            savedReports.splice(index, 1); // Remove item at index
+            localStorage.setItem('savedPolygonReports', JSON.stringify(savedReports));
+            displayReports(); // Refresh UI
+        }
+        function loadReportOnMap(linesData) {
+            if (polylineMeasure && polylineMeasure.clearAll) {
+                polylineMeasure.clearAll();
+            }
+            var formattedLines = linesData.map(function (line) {
+                return line.map(function (point) {
+                    return L.latLng(point.lat, point.lng);
+                });
+            });
+            setTimeout(function () {
+                polylineMeasure.seed(formattedLines);
+            }, 100); // Small delay to ensure clearAll finishes
+        }
+        window.addEventListener('load', function () {
+            displayReports();
+        });
+    </script>
+</body>
+
+</html>

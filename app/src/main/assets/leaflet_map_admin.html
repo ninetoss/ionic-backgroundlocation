@@ -9,7 +9,7 @@
     <link rel="stylesheet" href="dist/leaflet-sidepanel.css">
     <script src="dist/leaflet-sidepanel.min.js"></script>
     <link rel="stylesheet" href="./L.Control.Boating.css" />
-    <script src="./L.Boating.js"></script>
+    <script src="./L.Boating.Control.js"></script>
     <link rel="stylesheet" href="dist/Leaflet.PolylineMeasure.css">
     <script src="dist/Leaflet.PolylineMeasure.js"></script>
     <link href="style.css" rel="stylesheet">
@@ -153,7 +153,8 @@
                             <p>Lorem Ipsum is simply dummy text of the printing and typesetting industry. </p>
                             <a href="#">Read More</a>
                             <hr>
-                            <input type="text" id="mission" name="mission" placeholder="ชื่อภารกิจที่ได้รับมอบหมาย" required
+                            <input type="text" id="mission" name="mission" placeholder="ชื่อภารกิจที่ได้รับมอบหมาย"
+                                required
                                 style="width: 95%; padding: 8px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px;">
                             <input type="text" id="distance" name="distance" placeholder="ระยะทาง(ไมล์ทะเล)" required
                                 style="width: 95%; padding: 8px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px;">
@@ -164,17 +165,13 @@
                                 placeholder="อัตราการสิ้นเปลือง(ชั่วโมง/ลิตร)"
                                 style="width: 95%; padding: 8px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px;"
                                 onkeyup="sum();" required>
-                            <input type="text" id="timesIdleFuel" name="timesIdleFuel"
-                                placeholder="เรือจอดเดินเครื่อง(ถ้ามี) เช่น 1 ชั่วโมง 30 นาที => 1.30"
-                                style="width: 95%; padding: 8px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px;"
-                                onkeyup="sum();" required>
                             <button onclick="savePolygons()"
                                 style="width:100%; margin-bottom:10px; padding: 8px; cursor: pointer; background-color: #4CAF50; color: white; border: none; border-radius: 4px;">
                                 บันทึกเส้นทาง
                             </button>
                         </div>
                         <div class="sidepanel-tab-content" data-tab-content="tab-1">
-                            <h4>Line Coords</h4>
+                            <h4>PolylineMeasure</h4>
                             <p>Lorem Ipsum is simply dummy text of the printing and typesetting industry. </p>
                             <a href="#">Read More</a>
                             <hr>
@@ -183,7 +180,7 @@
                             </div>
                         </div>
                         <div class="sidepanel-tab-content" data-tab-content="tab-2">
-                            <h4>Line Coords</h4>
+                            <h4>PolylineCoords</h4>
                             <p>Lorem Ipsum is simply dummy text of the printing and typesetting industry. </p>
                             <a href="#">Read More</a>
                             <hr>
@@ -203,6 +200,17 @@
                                 style="width: 100%; padding: 12px; background-color: #28a745; color: white; border: none; border-radius: 4px; font-weight: bold; cursor: pointer;">
                                 START STREAMING
                             </button>
+                            <div id="live-stream-preview" style="margin-top: 20px; display: none;">
+                                <div
+                                    style="position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden; border-radius: 8px;">
+                                    <iframe id="video-frame"
+                                        style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;" src=""
+                                        frameborder="0"
+                                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                        allowfullscreen>
+                                    </iframe>
+                                </div>
+                            </div>
                             <div id="streamStatus"
                                 style="margin-top: 20px; padding: 10px; background: #f8f9fa; border-left: 4px solid #007bff; font-size: 0.9rem;">
                                 Status: Ready
@@ -230,6 +238,15 @@
                                     btn.style.backgroundColor = "#28a745";
                                     isStreaming = false;
                                 }
+                                const container = document.getElementById('live-stream-preview');
+                                const frame = document.getElementById('video-frame');
+                                frame.src = "https://www.youtube.com/embed/live_stream?channel=UCN8bERwO1YWoncVO3MLwa-w?autoplay=1";
+                                container.style.display = "block";
+                                if (window.Android && window.Android.startLiveStream) {
+                                    window.Android.startLiveStream(title);
+                                } else {
+                                    console.log("Native Android interface not found. (If testing in browser, this is normal)");
+                                }
                             }
                             function updateStreamStatus(status) {
                                 document.getElementById('streamStatus').innerText = status;
@@ -247,7 +264,7 @@
                             }
                         </script>
                         <div class="sidepanel-tab-content" data-tab-content="tab-4">
-                            <h4>Username</h4>
+                            <h4>Username Password</h4>
                             <p>Lorem Ipsum is simply dummy text of the printing and typesetting industry. </p>
                             <a href="#">Read More</a>
                             <hr>
@@ -270,38 +287,57 @@
         </div>
     </div>
     <script>
-        var myStyle = {
-            color: '#d3eff8',
-            weight: 3,
-            opacity: 1
-        };
-        var myLineStringStyle = {
-            color: '#d3eff8',
-            weight: 3,
-            opacity: 1
-        };
-        var MarineStyle = {
-            color: '#000000',
-            weight: 2,
-            opacity: 1,
-            fillColor: '#1a3661',
-            fillOpacity: 1
-        };
-        var ProvinceStyle = {
+        var MaritimeStyle2 = {
             color: '#000000',
             weight: 1,
-            opacity: 1
+            fillOpacity: 0
         };
-        var LandStyle = {
-            color: '#ffffff',
+        var ZoneInStyle2 = {
+            color: '#000000',
             weight: 1,
+            fillOpacity: 0
+        };
+        var ZoneOutStyle2 = {
+            color: '#000000',
+            weight: 1,
+            fillOpacity: 0
+        };
+        var ZoneFreeStyle2 = {
+            color: '#000000',
+            weight: 1,
+            fillOpacity: 0
+        };
+        var ZoneAreaStyle2 = {
+            color: '#000000',
+            weight: 1,
+            fillOpacity: 0
+        };
+        const Maritimeline2 = L.geoJSON(maritimeline, { style: MaritimeStyle2 });
+        const MaritimeIn2 = L.geoJSON(markersLayerIn, { style: ZoneInStyle2 });
+        const MaritimeOut2 = L.geoJSON(markersLayerOut, { style: ZoneOutStyle2 });
+        const MaritimeFree2 = L.geoJSON(markersLayerFree, { style: ZoneFreeStyle2 });
+        const MaritimeArea2 = L.geoJSON(markersLayerArea, { style: ZoneAreaStyle2 });
+        const template1 = L.layerGroup([Maritimeline2, MaritimeIn2, MaritimeOut2, MaritimeFree2, MaritimeArea2]);
+        //var LandStyle = {
+            //color: '#ffffff',
+            //weight: 1,
+            //opacity: 1,
+            //fillColor: '#ffffff',
+            //fillOpacity: 1
+        //};
+        var ZoneInStyle = {
+            color: '#000000',
+            weight: 1,
+            fillColor: '#d3eff8',
             opacity: 1,
-            fillColor: '#ffffff',
             fillOpacity: 1
         };
-        var MaritimeStyle = {
+        var ZoneOutStyle = {
             color: '#000000',
-            weight: 1
+            weight: 1,
+            fillColor: '#cdf5eb',
+            opacity: 1,
+            fillOpacity: 1
         };
         var ZoneFreeStyle = {
             color: '#000000',
@@ -317,81 +353,67 @@
             opacity: 1,
             fillOpacity: 1
         };
-        var ZoneOutStyle = {
-            color: '#000000',
-            weight: 1,
-            fillColor: '#cdf5eb',
-            opacity: 1,
-            fillOpacity: 1
-        };
-        var ZoneInStyle = {
-            color: '#000000',
-            weight: 1,
-            fillColor: '#d3eff8',
-            opacity: 1,
-            fillOpacity: 1
-        };
-        var MaritimeStyle2 = {
-            color: '#000000',
-            weight: 1
-        };
-        var ZoneFreeStyle2 = {
-            color: '#000000',
-            weight: 1
-        };
-        var ZoneAreaStyle2 = {
-            color: '#000000',
-            weight: 1
-        };
-        var ZoneOutStyle2 = {
-            color: '#000000',
-            weight: 1
-        };
-        var ZoneInStyle2 = {
-            color: '#000000',
-            weight: 1
-        };
-        const LandZone = L.geoJSON(landzone, { style: LandStyle });
-        const ProvinceZone = L.geoJSON(provincezone, { style: ProvinceStyle });
-        const MarineZone = L.geoJSON(marinezone, { style: MarineStyle });
-        const StringLine = L.geoJSON(myLines, { style: myStyle });
-        const myStringLine = L.geoJSON(myLineString, { style: myLineStringStyle });
+        //const LandZone = L.geoJSON(landzone, { style: LandStyle });
         const MaritimeIn = L.geoJSON(markersLayerIn, { style: ZoneInStyle });
         const MaritimeOut = L.geoJSON(markersLayerOut, { style: ZoneOutStyle });
-        const MaritimeArea = L.geoJSON(markersLayerArea, { style: ZoneAreaStyle });
         const MaritimeFree = L.geoJSON(markersLayerFree, { style: ZoneFreeStyle });
-        const Maritimeline = L.geoJSON(maritimeline, { style: MaritimeStyle });
-        const MaritimeIn2 = L.geoJSON(markersLayerIn, { style: ZoneInStyle2 });
-        const MaritimeOut2 = L.geoJSON(markersLayerOut, { style: ZoneOutStyle2 });
-        const MaritimeArea2 = L.geoJSON(markersLayerArea, { style: ZoneAreaStyle2 });
-        const MaritimeFree2 = L.geoJSON(markersLayerFree, { style: ZoneFreeStyle2 });
-        const Maritimeline2 = L.geoJSON(maritimeline, { style: MaritimeStyle2 });
-        const template2 = L.layerGroup([Maritimeline2, MaritimeIn2, MaritimeOut2, MaritimeFree2, MaritimeArea2]);
-        const template = L.layerGroup([ProvinceZone, StringLine, myStringLine, MarineZone, LandZone, Maritimeline, MaritimeIn, MaritimeOut, MaritimeFree, MaritimeArea]);
-        const baseMap = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png')
-        const seaMarks = L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png')
+        const MaritimeArea = L.geoJSON(markersLayerArea, { style: ZoneAreaStyle });
+        const template2 = L.layerGroup([MaritimeIn, MaritimeOut, MaritimeFree, MaritimeArea]);
+        var myLineStringStyle = {
+            color: '#d3eff8',
+            weight: 3,
+            opacity: 1
+        };
+        var myStyle = {
+            color: '#d3eff8',
+            weight: 3,
+            opacity: 1
+        };
+        const myStringLine = L.geoJSON(myLineString, { style: myLineStringStyle });
+        const StringLine = L.geoJSON(myLines, { style: myStyle });
+        const template3 = L.layerGroup([myStringLine, StringLine]);
+        var ProvinceStyle = {
+            color: '#000000',
+            weight: 1,
+            fillOpacity: 0
+        };
+        var MarineStyle = {
+            color: '#000000',
+            weight: 2,
+            opacity: 1,
+            fillColor: '#1a3661',
+            fillOpacity: 1
+        };
+        const ProvinceZone = L.geoJSON(provincezone, { style: ProvinceStyle });
+        const MarineZone = L.geoJSON(marinezone, { style: MarineStyle });
+        const template4 = L.layerGroup([ProvinceZone, MarineZone]);
         const google = L.tileLayer('https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
             maxZoom: 20,
-            subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
-            attribution: 'Google Hybrid'
+            subdomains: ['mt0', 'mt1', 'mt2', 'mt3']
+        });
+        const seaMarks = L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png')
+        const osm = L.tileLayer('http://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
+            maxZoom: 20,
+            subdomains: ['mt0', 'mt1', 'mt2', 'mt3']
         });
         const map = L.map('map', {
             center: [13.20, 100.30],
-            layers: [baseMap, seaMarks, template2],
-            zoom: 9,
+            layers: [osm, seaMarks, template1],
+            zoom: 6,
             rotate: true,
         })
         const overlays = {
-            'รูปแบบแผนที่': template,
-            'อาณาเขตทางทะเล': template2
+            'รูปแบบแผนที่': template1,
+            'อาณาเขตทางทะเล': template2,
+            'แม่น้ำสำคัญ': template3,
+            'พื้นที่รับผิดชอบ': template4
         };
         const baseLayers = {
-            'มุมมองถนน': baseMap,
+            'มุมมองถนน': osm,
             'ดาวเทียม': google
         };
         const layerControl = L.control.layers(baseLayers, overlays).addTo(map);
         const boatingControl = L.control.boating().addTo(map);
-        window.boatingControl = boatingControl;
         const sidepanelRight = L.control.sidepanel('mySidepanelRight', {
             panelPosition: 'right',
             tabsPosition: 'top',
@@ -407,6 +429,17 @@
             showBearings: true
         });
         polylineMeasure.addTo(map);
+        map.on('polylinemeasure:clear', function () {
+            if (typeof boatingControl !== 'undefined' && boatingControl.viewedRouteLayer) {
+                if (map.hasLayer(boatingControl.viewedRouteLayer)) {
+                    map.removeLayer(boatingControl.viewedRouteLayer);
+                }
+            } else if (window.boatingControl && window.boatingControl.viewedRouteLayer) {
+                if (map.hasLayer(window.boatingControl.viewedRouteLayer)) {
+                    map.removeLayer(window.boatingControl.viewedRouteLayer);
+                }
+            }
+        });
         var calcAngle = function (p1, p2, direction) {
             var lat1 = p1.lat / 180 * Math.PI;
             var lat2 = p2.lat / 180 * Math.PI;
@@ -451,15 +484,13 @@
             var dist = parseFloat(document.getElementById('distance').value) || 0;
             var speed = parseFloat(document.getElementById('speed').value) || 0;
             var consumption = parseFloat(document.getElementById('consumption').value) || 0;
-            var idleInput = document.getElementById('timesIdleFuel').value;
             var timeVal = "";
             var totalMinutesVal = 0;
-            var totalFuel = 0;
+            var fuelVal = 0;
             if (speed > 0) {
                 var timeInHours = dist / speed;
                 totalMinutesVal = (timeInHours * 60).toFixed(2);
-                var travelFuel = consumption * timeInHours;
-                totalFuel += travelFuel;
+                fuelVal = (consumption * timeInHours).toFixed(2);
                 var totalSeconds = timeInHours * 3600;
                 var days = Math.floor(totalSeconds / 86400);
                 var hours = Math.floor((totalSeconds % 86400) / 3600);
@@ -469,28 +500,26 @@
                 if (hours > 0 || days > 0) { timeVal += hours + "h "; }
                 timeVal += minutes + "m " + seconds + "s";
             }
-            if (idleInput) {
-                var parts = idleInput.split('.');
-                var idleH = parseInt(parts[0]) || 0;
-                var idleM = 0;
-                if (parts.length > 1) {
-                    idleM = parseInt(parts[1]);
-                }
-                var idleTimeInHours = idleH + (idleM / 60);
-                var idleFuel = (consumption * 0.025) * idleTimeInHours;
-                totalFuel += idleFuel;
-            }
             var newReport = {
                 id: Date.now(),
                 mission: missionName,
                 distance: dist,
-                times: timeVal,
-                totalMinutes: totalMinutesVal,
-                fuel: totalFuel.toFixed(2), // Final result (Travel + Idle) formatted to 2 decimals
+                times: timeVal,          // Using the variable we just calculated
+                totalMinutes: totalMinutesVal, // Using the variable we just calculated
+                fuel: fuelVal,           // Using the variable we just calculated
                 timestamp: new Date().toLocaleString(),
                 lines: typeof currentSessionLines !== 'undefined' ? currentSessionLines : []
             };
-            console.log("Saved:", newReport);
+            var savedReports = JSON.parse(localStorage.getItem('savedPolygonReports') || '[]');
+            savedReports.push(newReport);
+            localStorage.setItem('savedPolygonReports', JSON.stringify(savedReports));
+            currentSessionLines = [];
+            if (polylineMeasure && polylineMeasure.clearAll) { polylineMeasure.clearAll(); }
+            document.getElementById('mission').value = "";
+            document.getElementById('distance').value = "";
+            document.getElementById('speed').value = "";
+            document.getElementById('consumption').value = "";
+            displayReports();
         }
         function displayReports() {
             var container = document.getElementById('report-list-container');
@@ -578,6 +607,27 @@
             localStorage.setItem('savedPolygonReports', JSON.stringify(savedReports));
             displayReports(); // Refresh UI
         }
+        function loadReportOnMap(linesData) {
+            if (polylineMeasure && polylineMeasure.clearAll) {
+                polylineMeasure.clearAll();
+            }
+            var formattedLines = linesData.map(function (line) {
+                return line.map(function (point) {
+                    return L.latLng(point.lat, point.lng);
+                });
+            });
+            if (formattedLines.length > 0) {
+                var bounds = L.polyline(formattedLines).getBounds();
+                map.fitBounds(bounds);
+            }
+            setTimeout(function () {
+                polylineMeasure._clearAllMeasurements();
+                polylineMeasure.seed(formattedLines);
+            }, 100);
+        }
+        window.addEventListener('load', function () {
+            displayReports();
+        });
     </script>
 </body>
 

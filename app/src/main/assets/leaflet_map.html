@@ -9,369 +9,7 @@
     <link rel="stylesheet" href="dist/leaflet-sidepanel.css">
     <script src="dist/leaflet-sidepanel.min.js"></script>
     <link rel="stylesheet" href="./L.Control.Boating.css" />
-    <script>
-        L.Control.Boating = L.Control.extend({
-
-            options: {
-                position: 'topleft',
-                legendPosition: 'bottomleft',
-                boatColor: '#3388ff',
-                lineColor1: '#3388ff',
-                lineColor2: '#3388ff',
-                circleColor: '#3388ff',
-                cacheLength: 4,
-                url: 'location.json',
-                interval: 5000
-            },
-
-            onAdd: function (map) {
-                // ... (existing onAdd code) ...
-                const container = L.DomUtil.create('div', 'leaflet-bar leaflet-control')
-                const link = L.DomUtil.create('a', 'leaflet-bar-part leaflet-bar-part-single', container)
-                this.icon = L.DomUtil.create('span', 'leaflet-control-boating-arrow', link)
-                link.href = '#'
-
-                L.DomEvent.on(link, 'click', function (e) {
-                    L.DomEvent.stopPropagation(e)
-                    L.DomEvent.preventDefault(e)
-                    this.onClick()
-                }, this)
-
-                this.legend = L.control({
-                    position: this.options.legendPosition,
-                    lineColor1: this.options.lineColor1,
-                    lineColor2: this.options.lineColor2
-                })
-
-                // Define legend layout
-                this.legend.onAdd = function (map) {
-                    const container = L.DomUtil.create('div', 'leaflet-control leaflet-bar leaflet-control-boating-legend')
-                    container.innerHTML = `
-        <table>
-          <tbody>
-            <tr><td colspan="2" class="double" id="heading"></td></tr>
-            <tr><td colspan="2" class="double" id="knots"></td></tr>
-            <tr><th>lat</th><td id="lat"></td></tr>
-            <tr><th>lon</th><td id="lng"></td></tr>
-          </tbody>
-        </table>`
-                    this.heading = container.querySelector('#heading')
-                    this.knots = container.querySelector('#knots')
-                    this.lat = container.querySelector('#lat')
-                    this.lng = container.querySelector('#lng')
-                    return container
-                }
-
-                // Create Boat Marker
-                this.boat = L.marker([0, 0], {
-                    icon: L.divIcon({
-                        iconAnchor: [12.5, 12.5],
-                        iconSize: [25, 25],
-                        className: 'boat',
-                        html: `
-          <svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" id="boat-svg">
-            <path d="M 128 512 C 128 512 128 128 256 0 C 384 128 384 512 384 512 Z" fill="${this.options.boatColor}"/>
-          </svg>`,
-                    })
-                })
-                this.boat.on('add', function () {
-                    this.svg = this.getElement().querySelector('#boat-svg')
-                })
-
-                // Create visual elements
-                this.circle = L.circle([0, 0], { color: this.options.circleColor, stroke: false })
-                this.line = L.polyline([[0, 0], [0, 0]], { color: this.options.lineColor2, lineCap: 'square' })
-                this.linebg = L.polyline([[0, 0], [0, 0]], { color: this.options.lineColor1 })
-                this.track = L.polyline([], { color: '#3388ff', weight: 3 });
-
-                return container
-            },
-
-            // --- MATH HELPERS ---
-            cosD: function (deg) { return Math.cos(deg * Math.PI / 180) },
-            sinD: function (deg) { return Math.sin(deg * Math.PI / 180) },
-            atan2D: function (x, y) { return ((Math.atan2(x, y) * 180 / Math.PI) + 360) % 360 },
-
-            // --- STATE HELPERS ---
-            isRequesting: function () { return this.icon.classList.contains('requesting') },
-            isLocating: function () { return this.icon.classList.contains('locating') },
-            isFollowing: function () { return this.icon.classList.contains('following') },
-
-            onClick: function () {
-                if (this.isFollowing()) {
-                    this.stop()
-                } else if (this.isLocating()) {
-                    this._map.panTo(this.lastPosition.latlng)
-                    this.follow()
-                } else if (!this.isRequesting()) {
-                    this.request()
-                }
-            },
-
-            onDragStart: function () {
-                if (this.isFollowing()) {
-                    this.unfollow()
-                }
-            },
-
-            onMoveEnd: function () {
-                if ((this.isLocating() || this.isFollowing()) && this.lastPosition) {
-                    this.updateLine(this.lastPosition)
-                }
-            },
-
-            // --- TRACKING CONTROL ---
-
-            // *** NEW: JSON POLLING IMPLEMENTATION ***
-            startPolling: function () {
-                if (this._pollInterval) return;
-                this._fetchLocation(); // Fetch immediately
-                this._pollInterval = setInterval(this._fetchLocation.bind(this), 5000);
-            },
-
-            stopPolling: function () {
-                if (this._pollInterval) {
-                    clearInterval(this._pollInterval);
-                    this._pollInterval = null;
-                }
-            },
-
-            _fetchLocation: function () {
-                fetch("location.json")
-                    .then(res => res.json())
-                    .then(data => {
-                        const e = {
-                            latlng: L.latLng(data.lat, data.lng),
-                            accuracy: data.accuracy || 10,
-                            heading: data.heading || data.bearing || 0,
-                            speed: data.speed || 0,
-                            timestamp: Date.now()
-                        };
-                        this.onLocationFound(e);
-                    })
-                    .catch(err => console.error("Error loading location.json", err));
-            },
-            // ****************************************
-
-            fetchLocation: function () {
-                fetch(this.options.url + '?t=' + Date.now())
-                    .then(response => response.json())
-                    .then(data => {
-                        const eventData = {
-                            latlng: L.latLng(parseFloat(data.lat), parseFloat(data.lng)),
-                            heading: parseFloat(data.bearing),
-                            speed: parseFloat(data.speed),
-                            timestamp: parseFloat(data.timestamp),
-                            accuracy: 10
-                        }
-                        this.onLocationFound(eventData)
-                    })
-                    .catch(err => {
-                        console.error("Fetch error:", err)
-                    })
-            },
-
-            request: function () {
-                this._map.on('moveend', this.onMoveEnd, this)
-                this._map.on('dragstart', this.onDragStart, this)
-
-                this.icon.classList.remove('following')
-                this.icon.classList.remove('locating')
-                this.icon.classList.add('requesting')
-
-                // Start polling the JSON file
-                this.startPolling();
-
-                if (window.Android && window.Android.startTracking) {
-                    window.Android.startTracking();
-                }
-            },
-
-            // ... (rest of the file remains exactly the same: follow, unfollow, stop, etc.)
-
-            follow: function () {
-                this._map.options.scrollWheelZoom = 'center'
-                this._map.options.doubleClickZoom = 'center'
-                this.icon.classList.remove('requesting')
-                this.icon.classList.remove('locating')
-                this.icon.classList.add('following')
-            },
-
-            unfollow: function () {
-                this._map.options.scrollWheelZoom = true
-                this._map.options.doubleClickZoom = true
-                this.icon.classList.remove('requesting')
-                this.icon.classList.remove('following')
-                this.icon.classList.add('locating')
-            },
-
-            stop: function () {
-                this._map.off('moveend', this.onMoveEnd, this)
-                this._map.off('dragstart', this.onDragStart, this)
-                this._map.options.scrollWheelZoom = true
-                this._map.options.doubleClickZoom = true
-                this.icon.classList.remove('requesting')
-                this.icon.classList.remove('following')
-                this.icon.classList.remove('locating')
-
-                if (this.legend && this.legend._map) this._map.removeControl(this.legend)
-                this._map.removeLayer(this.circle)
-                this._map.removeLayer(this.linebg)
-                this._map.removeLayer(this.line)
-                this._map.removeLayer(this.boat)
-                this._map.removeLayer(this.track)
-                this.track.setLatLngs([]);
-
-                // Stop polling
-                this.stopPolling();
-
-                if (window.Android && window.Android.stopTracking) {
-                    window.Android.stopTracking();
-                }
-            },
-
-            onLocationFound: function (e) {
-                e.latlngDMS = this.latlngDMS(e)
-                // Note: smoothMotion works best with high frequency updates.
-                // If your JSON updates every 5 seconds, the smoothing might look jumpy.
-                // You can disable it by just doing: e.smooth = { heading: e.heading, speed: e.speed };
-                e.smooth = this.smoothMotion(e)
-
-                if (this.isRequesting()) {
-                    this._map.addControl(this.legend)
-                    this._map.addLayer(this.circle)
-                    this._map.addLayer(this.linebg)
-                    this._map.addLayer(this.line)
-                    this._map.addLayer(this.boat)
-                    this._map.addLayer(this.track)
-                    this.follow()
-                }
-                if (this.isFollowing()) {
-                    this._map.panTo(e.latlng)
-                }
-                this.updateLegend(e)
-                this.updateCircle(e)
-                this.updateLine(e)
-                this.updateBoat(e)
-                this.track.addLatLng(e.latlng);
-                this.lastPosition = e
-            },
-
-            onLocationError: function (e) {
-                console.error(e)
-                if (e.code === 1) {
-                    alert('unlock geolocation please')
-                    this.stop()
-                }
-            },
-
-            updateCircle: function (e) {
-                this.circle.setLatLng(e.latlng)
-                this.circle.setRadius(e.accuracy)
-            },
-
-            updateBoat: function (e) {
-                const heading = e.smooth.heading
-                this.boat.svg.style.transform = 'rotate(' + heading + 'deg)'
-                this.boat.setLatLng(e.latlng)
-            },
-
-            updateLine: function (e) {
-                const zoom = this._map.getZoom()
-                const mapBounds = this._map.getBounds()
-                const heading = e.smooth.heading
-                const speed = e.smooth.speed
-
-                const length = Math.max(
-                    mapBounds.getNorthWest().distanceTo(e.latlng),
-                    mapBounds.getNorthEast().distanceTo(e.latlng),
-                    mapBounds.getSouthEast().distanceTo(e.latlng),
-                    mapBounds.getSouthWest().distanceTo(e.latlng),
-                )
-                const lengthDeg = length * 360 / 40000000
-                const dirPoint = L.latLng(
-                    e.latlng.lat + (lengthDeg * this.cosD(heading)),
-                    e.latlng.lng + (lengthDeg * this.sinD(heading) / this.cosD(e.latlng.lat)),
-                )
-                this.line.setLatLngs([e.latlng, dirPoint])
-                this.linebg.setLatLngs([e.latlng, dirPoint])
-
-                const metersPerPixel = 40000000 * this.cosD(e.latlng.lat) / (256 * Math.pow(2, zoom))
-                const pixelsPerHour = speed / metersPerPixel * 3600
-                this.line.setStyle({
-                    dashArray: pixelsPerHour + ',' + pixelsPerHour,
-                    dashOffset: pixelsPerHour,
-                })
-            },
-
-            updateLegend: function (e) {
-                const nautic = 40000 / 360 / 60
-                const heading = Math.round(e.smooth.heading)
-                // Assumes speed is in m/s
-                const speed = Math.round(e.smooth.speed * 36 / nautic) / 10
-                this.legend.heading.innerHTML = heading + ' °'
-                this.legend.knots.innerHTML = speed + ' kts'
-                this.legend.lat.innerHTML = e.latlngDMS.lat
-                this.legend.lng.innerHTML = e.latlngDMS.lng
-            },
-
-            latlngDMS: function (e) {
-                function dms(coord) {
-                    let float = Math.abs(coord)
-                    let d = Math.floor(float)
-                    float = (float - d) * 60
-                    let m = Math.floor(float)
-                    float = (float - m) * 60
-                    let s = Math.round(float)
-                    if (s === 60) { m = m + 1; s = 0; }
-                    if (m === 60) { d = d + 1; m = 0; }
-                    if (s < 10) { s = '0' + s }
-                    if (m < 10) { m = '0' + m }
-                    return d + '&deg; ' + m + '&apos; ' + s + '&quot; '
-                }
-                return {
-                    lat: dms(e.latlng.lat) + ((e.latlng.lat > 0) ? 'N' : 'S'),
-                    lng: dms(e.latlng.lng) + ((e.latlng.lng > 0) ? 'E' : 'W'),
-                }
-            },
-
-            smoothMotion: (function () {
-                const cache = []
-                return function (e) {
-                    cache.push(e)
-                    if (cache.length > this.options.cacheLength) {
-                        cache.shift()
-                    }
-                    const sumX = cache.reduce(
-                        (sum, e) => sum + (e.speed || 0) * this.cosD(e.heading || 0), 0
-                    )
-                    const sumY = cache.reduce(
-                        (sum, e) => sum + (e.speed || 0) * this.sinD(e.heading || 0), 0
-                    )
-                    return {
-                        speed: Math.sqrt(sumX ** 2 + sumY ** 2) / cache.length,
-                        heading: this.atan2D(sumY, sumX),
-                    }
-                }
-            })()
-        })
-
-        L.control.boating = function (options) {
-            return new L.Control.Boating(options)
-        }
-
-        function receiveAndroidLocation(lat, lng, bearing, speed) {
-            if (window.boatingControl) {
-                const locationEvent = {
-                    latlng: L.latLng(lat, lng),
-                    accuracy: 10,
-                    heading: bearing,
-                    speed: speed
-                };
-                window.boatingControl.onLocationFound(locationEvent);
-            }
-        }
-    </script>
+    <script src="./L.Boating.js"></script>
     <link rel="stylesheet" href="dist/Leaflet.PolylineMeasure.css">
     <script src="dist/Leaflet.PolylineMeasure.js"></script>
     <link href="style.css" rel="stylesheet">
@@ -515,7 +153,8 @@
                             <p>Lorem Ipsum is simply dummy text of the printing and typesetting industry. </p>
                             <a href="#">Read More</a>
                             <hr>
-                            <input type="text" id="mission" name="mission" placeholder="ภารกิจ" required
+                            <input type="text" id="mission" name="mission" placeholder="ชื่อภารกิจที่ได้รับมอบหมาย"
+                                required
                                 style="width: 95%; padding: 8px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px;">
                             <input type="text" id="distance" name="distance" placeholder="ระยะทาง(ไมล์ทะเล)" required
                                 style="width: 95%; padding: 8px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px;">
@@ -526,17 +165,13 @@
                                 placeholder="อัตราการสิ้นเปลือง(ชั่วโมง/ลิตร)"
                                 style="width: 95%; padding: 8px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px;"
                                 onkeyup="sum();" required>
-                            <input type="text" id="timesIdleFuel" name="timesIdleFuel"
-                                placeholder="ระยะเวลาเรือจอดเดินเครื่อง(ชั่วโมง.นาที)"
-                                style="width: 95%; padding: 8px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px;"
-                                onkeyup="sum();" required>
                             <button onclick="savePolygons()"
                                 style="width:100%; margin-bottom:10px; padding: 8px; cursor: pointer; background-color: #4CAF50; color: white; border: none; border-radius: 4px;">
-                                Save Current Polygons
+                                บันทึกเส้นทาง
                             </button>
                         </div>
                         <div class="sidepanel-tab-content" data-tab-content="tab-1">
-                            <h4>Line Coords</h4>
+                            <h4>PolylineMeasure</h4>
                             <p>Lorem Ipsum is simply dummy text of the printing and typesetting industry. </p>
                             <a href="#">Read More</a>
                             <hr>
@@ -545,45 +180,12 @@
                             </div>
                         </div>
                         <div class="sidepanel-tab-content" data-tab-content="tab-2">
-                            <h4>Line Coords</h4>
+                            <h4>PolylineCoords</h4>
                             <p>Lorem Ipsum is simply dummy text of the printing and typesetting industry. </p>
                             <a href="#">Read More</a>
                             <hr>
                             <div class="blog-category_block">
-                                <ul id="report-routes-container">
-                                    <li style="margin-bottom: 15px;">
-                                        <a href="#"class="report-routes">
-                                            <h5 class="text-white text-uppercase m-b-20">
-                                                date.toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day:
-                                                'numeric', calendar: 'buddhist' }) เริ่มเวลา date.toLocaleTimeStartString(); - date.toLocaleTimeStopString(); น.</h5>
-                                            <table width="100%">
-                                                <tbody>
-                                                    <tr>
-                                                        <td width="33%">
-                                                            <span class="text-white">ระยะทาง</span>
-                                                            <h1 class="m-b-20 text-white counter">${item.distance}</h1>
-                                                            <h6 class="text-white text-uppercase m-b-20">ไมล์ทะเล</h6>
-                                                        </td>
-                                                        <td width="33%">
-                                                            <span class="text-white">เวลา(นาที)</span>
-                                                            <h1 class="m-b-20 text-white counter">${item.time}</h1>
-                                                            <h6 class="text-white text-uppercase m-b-20">
-                                                                ${item.totalMinutes}</h6>
-                                                        </td>
-                                                        <td width="33%">
-                                                            <span class="text-white">ความเร็วเดินทาง</span>
-                                                            <h1 class="m-b-20 text-white counter">${item.speed}</h1>
-                                                            <h6 class="text-white text-uppercase m-b-20">ไมล์ทะเล/ชม.
-                                                            </h6>
-                                                        </td>
-                                                    </tr>
-                                                </tbody>
-                                            </table>
-                                            <button class="delete-btn"
-                                                style="font-size: 11px; margin-top: 0px; padding: 5px 10px; background-color: rgb(220, 53, 69); color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 0.8rem;">ลบข้อมูล</button>
-                                        </a>
-                                    </li>
-                                </ul>
+                                <ul id="report-routes-container"></ul>
                             </div>
                         </div>
                         <div class="sidepanel-tab-content" data-tab-content="tab-3">
@@ -598,6 +200,17 @@
                                 style="width: 100%; padding: 12px; background-color: #28a745; color: white; border: none; border-radius: 4px; font-weight: bold; cursor: pointer;">
                                 START STREAMING
                             </button>
+                            <div id="live-stream-preview" style="margin-top: 20px; display: none;">
+                                <div
+                                    style="position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden; border-radius: 8px;">
+                                    <iframe id="video-frame"
+                                        style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;" src=""
+                                        frameborder="0"
+                                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                        allowfullscreen>
+                                    </iframe>
+                                </div>
+                            </div>
                             <div id="streamStatus"
                                 style="margin-top: 20px; padding: 10px; background: #f8f9fa; border-left: 4px solid #007bff; font-size: 0.9rem;">
                                 Status: Ready
@@ -625,6 +238,15 @@
                                     btn.style.backgroundColor = "#28a745";
                                     isStreaming = false;
                                 }
+                                const container = document.getElementById('live-stream-preview');
+                                const frame = document.getElementById('video-frame');
+                                frame.src = "https://www.youtube.com/embed/live_stream?channel=UCN8bERwO1YWoncVO3MLwa-w?autoplay=1";
+                                container.style.display = "block";
+                                if (window.Android && window.Android.startLiveStream) {
+                                    window.Android.startLiveStream(title);
+                                } else {
+                                    console.log("Native Android interface not found. (If testing in browser, this is normal)");
+                                }
                             }
                             function updateStreamStatus(status) {
                                 document.getElementById('streamStatus').innerText = status;
@@ -642,7 +264,7 @@
                             }
                         </script>
                         <div class="sidepanel-tab-content" data-tab-content="tab-4">
-                            <h4>Username</h4>
+                            <h4>Username Password</h4>
                             <p>Lorem Ipsum is simply dummy text of the printing and typesetting industry. </p>
                             <a href="#">Read More</a>
                             <hr>
@@ -665,38 +287,57 @@
         </div>
     </div>
     <script>
-        var myStyle = {
-            color: '#d3eff8',
-            weight: 3,
-            opacity: 1
-        };
-        var myLineStringStyle = {
-            color: '#d3eff8',
-            weight: 3,
-            opacity: 1
-        };
-        var MarineStyle = {
-            color: '#000000',
-            weight: 2,
-            opacity: 1,
-            fillColor: '#1a3661',
-            fillOpacity: 1
-        };
-        var ProvinceStyle = {
+        var MaritimeStyle2 = {
             color: '#000000',
             weight: 1,
-            opacity: 1
+            fillOpacity: 0
         };
-        var LandStyle = {
-            color: '#ffffff',
+        var ZoneInStyle2 = {
+            color: '#000000',
             weight: 1,
+            fillOpacity: 0
+        };
+        var ZoneOutStyle2 = {
+            color: '#000000',
+            weight: 1,
+            fillOpacity: 0
+        };
+        var ZoneFreeStyle2 = {
+            color: '#000000',
+            weight: 1,
+            fillOpacity: 0
+        };
+        var ZoneAreaStyle2 = {
+            color: '#000000',
+            weight: 1,
+            fillOpacity: 0
+        };
+        const Maritimeline2 = L.geoJSON(maritimeline, { style: MaritimeStyle2 });
+        const MaritimeIn2 = L.geoJSON(markersLayerIn, { style: ZoneInStyle2 });
+        const MaritimeOut2 = L.geoJSON(markersLayerOut, { style: ZoneOutStyle2 });
+        const MaritimeFree2 = L.geoJSON(markersLayerFree, { style: ZoneFreeStyle2 });
+        const MaritimeArea2 = L.geoJSON(markersLayerArea, { style: ZoneAreaStyle2 });
+        const template1 = L.layerGroup([Maritimeline2, MaritimeIn2, MaritimeOut2, MaritimeFree2, MaritimeArea2]);
+        //var LandStyle = {
+            //color: '#ffffff',
+            //weight: 1,
+            //opacity: 1,
+            //fillColor: '#ffffff',
+            //fillOpacity: 1
+        //};
+        var ZoneInStyle = {
+            color: '#000000',
+            weight: 1,
+            fillColor: '#d3eff8',
             opacity: 1,
-            fillColor: '#ffffff',
             fillOpacity: 1
         };
-        var MaritimeStyle = {
+        var ZoneOutStyle = {
             color: '#000000',
-            weight: 1
+            weight: 1,
+            fillColor: '#cdf5eb',
+            opacity: 1,
+            fillOpacity: 1
         };
         var ZoneFreeStyle = {
             color: '#000000',
@@ -712,76 +353,63 @@
             opacity: 1,
             fillOpacity: 1
         };
-        var ZoneOutStyle = {
-            color: '#000000',
-            weight: 1,
-            fillColor: '#cdf5eb',
-            opacity: 1,
-            fillOpacity: 1
-        };
-        var ZoneInStyle = {
-            color: '#000000',
-            weight: 1,
-            fillColor: '#d3eff8',
-            opacity: 1,
-            fillOpacity: 1
-        };
-        var MaritimeStyle2 = {
-            color: '#000000',
-            weight: 1
-        };
-        var ZoneFreeStyle2 = {
-            color: '#000000',
-            weight: 1
-        };
-        var ZoneAreaStyle2 = {
-            color: '#000000',
-            weight: 1
-        };
-        var ZoneOutStyle2 = {
-            color: '#000000',
-            weight: 1
-        };
-        var ZoneInStyle2 = {
-            color: '#000000',
-            weight: 1
-        };
-        const LandZone = L.geoJSON(landzone, { style: LandStyle });
-        const ProvinceZone = L.geoJSON(provincezone, { style: ProvinceStyle });
-        const MarineZone = L.geoJSON(marinezone, { style: MarineStyle });
-        const StringLine = L.geoJSON(myLines, { style: myStyle });
-        const myStringLine = L.geoJSON(myLineString, { style: myLineStringStyle });
+        //const LandZone = L.geoJSON(landzone, { style: LandStyle });
         const MaritimeIn = L.geoJSON(markersLayerIn, { style: ZoneInStyle });
         const MaritimeOut = L.geoJSON(markersLayerOut, { style: ZoneOutStyle });
-        const MaritimeArea = L.geoJSON(markersLayerArea, { style: ZoneAreaStyle });
         const MaritimeFree = L.geoJSON(markersLayerFree, { style: ZoneFreeStyle });
-        const Maritimeline = L.geoJSON(maritimeline, { style: MaritimeStyle });
-        const MaritimeIn2 = L.geoJSON(markersLayerIn, { style: ZoneInStyle2 });
-        const MaritimeOut2 = L.geoJSON(markersLayerOut, { style: ZoneOutStyle2 });
-        const MaritimeArea2 = L.geoJSON(markersLayerArea, { style: ZoneAreaStyle2 });
-        const MaritimeFree2 = L.geoJSON(markersLayerFree, { style: ZoneFreeStyle2 });
-        const Maritimeline2 = L.geoJSON(maritimeline, { style: MaritimeStyle2 });
-        const template2 = L.layerGroup([Maritimeline2, MaritimeIn2, MaritimeOut2, MaritimeFree2, MaritimeArea2]);
-        const template = L.layerGroup([ProvinceZone, StringLine, myStringLine, MarineZone, LandZone, Maritimeline, MaritimeIn, MaritimeOut, MaritimeFree, MaritimeArea]);
-        const baseMap = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png')
-        const seaMarks = L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png')
+        const MaritimeArea = L.geoJSON(markersLayerArea, { style: ZoneAreaStyle });
+        const template2 = L.layerGroup([MaritimeIn, MaritimeOut, MaritimeFree, MaritimeArea]);
+        var myLineStringStyle = {
+            color: '#d3eff8',
+            weight: 3,
+            opacity: 1
+        };
+        var myStyle = {
+            color: '#d3eff8',
+            weight: 3,
+            opacity: 1
+        };
+        const myStringLine = L.geoJSON(myLineString, { style: myLineStringStyle });
+        const StringLine = L.geoJSON(myLines, { style: myStyle });
+        const template3 = L.layerGroup([myStringLine, StringLine]);
+        var ProvinceStyle = {
+            color: '#000000',
+            weight: 1,
+            fillOpacity: 0
+        };
+        var MarineStyle = {
+            color: '#000000',
+            weight: 2,
+            opacity: 1,
+            fillColor: '#1a3661',
+            fillOpacity: 1
+        };
+        const ProvinceZone = L.geoJSON(provincezone, { style: ProvinceStyle });
+        const MarineZone = L.geoJSON(marinezone, { style: MarineStyle });
+        const template4 = L.layerGroup([ProvinceZone, MarineZone]);
         const google = L.tileLayer('https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
             maxZoom: 20,
-            subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
-            attribution: 'Google Hybrid'
+            subdomains: ['mt0', 'mt1', 'mt2', 'mt3']
+        });
+        const seaMarks = L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png')
+        const osm = L.tileLayer('http://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
+            maxZoom: 20,
+            subdomains: ['mt0', 'mt1', 'mt2', 'mt3']
         });
         const map = L.map('map', {
             center: [13.20, 100.30],
-            layers: [baseMap, seaMarks, template2],
-            zoom: 9,
+            layers: [osm, seaMarks, template1],
+            zoom: 6,
             rotate: true,
         })
         const overlays = {
-            'รูปแบบแผนที่': template,
-            'อาณาเขตทางทะเล': template2
+            'รูปแบบแผนที่': template1,
+            'อาณาเขตทางทะเล': template2,
+            'แม่น้ำสำคัญ': template3,
+            'พื้นที่รับผิดชอบ': template4
         };
         const baseLayers = {
-            'มุมมองถนน': baseMap,
+            'มุมมองถนน': osm,
             'ดาวเทียม': google
         };
         const layerControl = L.control.layers(baseLayers, overlays).addTo(map);
@@ -802,6 +430,17 @@
             showBearings: true
         });
         polylineMeasure.addTo(map);
+        map.on('polylinemeasure:clear', function () {
+            if (typeof boatingControl !== 'undefined' && boatingControl.viewedRouteLayer) {
+                if (map.hasLayer(boatingControl.viewedRouteLayer)) {
+                    map.removeLayer(boatingControl.viewedRouteLayer);
+                }
+            } else if (window.boatingControl && window.boatingControl.viewedRouteLayer) {
+                if (map.hasLayer(window.boatingControl.viewedRouteLayer)) {
+                    map.removeLayer(window.boatingControl.viewedRouteLayer);
+                }
+            }
+        });
         var calcAngle = function (p1, p2, direction) {
             var lat1 = p1.lat / 180 * Math.PI;
             var lat2 = p2.lat / 180 * Math.PI;
@@ -846,15 +485,13 @@
             var dist = parseFloat(document.getElementById('distance').value) || 0;
             var speed = parseFloat(document.getElementById('speed').value) || 0;
             var consumption = parseFloat(document.getElementById('consumption').value) || 0;
-            var idleInput = document.getElementById('timesIdleFuel').value;
             var timeVal = "";
             var totalMinutesVal = 0;
-            var totalFuel = 0;
+            var fuelVal = 0;
             if (speed > 0) {
                 var timeInHours = dist / speed;
                 totalMinutesVal = (timeInHours * 60).toFixed(2);
-                var travelFuel = consumption * timeInHours;
-                totalFuel += travelFuel;
+                fuelVal = (consumption * timeInHours).toFixed(2);
                 var totalSeconds = timeInHours * 3600;
                 var days = Math.floor(totalSeconds / 86400);
                 var hours = Math.floor((totalSeconds % 86400) / 3600);
@@ -864,28 +501,26 @@
                 if (hours > 0 || days > 0) { timeVal += hours + "h "; }
                 timeVal += minutes + "m " + seconds + "s";
             }
-            if (idleInput) {
-                var parts = idleInput.split('.');
-                var idleH = parseInt(parts[0]) || 0;
-                var idleM = 0;
-                if (parts.length > 1) {
-                    idleM = parseInt(parts[1]);
-                }
-                var idleTimeInHours = idleH + (idleM / 60);
-                var idleFuel = (consumption * 0.025) * idleTimeInHours;
-                totalFuel += idleFuel;
-            }
             var newReport = {
                 id: Date.now(),
                 mission: missionName,
                 distance: dist,
-                times: timeVal,
-                totalMinutes: totalMinutesVal,
-                fuel: totalFuel.toFixed(2), // Final result (Travel + Idle) formatted to 2 decimals
+                times: timeVal,          // Using the variable we just calculated
+                totalMinutes: totalMinutesVal, // Using the variable we just calculated
+                fuel: fuelVal,           // Using the variable we just calculated
                 timestamp: new Date().toLocaleString(),
                 lines: typeof currentSessionLines !== 'undefined' ? currentSessionLines : []
             };
-            console.log("Saved:", newReport);
+            var savedReports = JSON.parse(localStorage.getItem('savedPolygonReports') || '[]');
+            savedReports.push(newReport);
+            localStorage.setItem('savedPolygonReports', JSON.stringify(savedReports));
+            currentSessionLines = [];
+            if (polylineMeasure && polylineMeasure.clearAll) { polylineMeasure.clearAll(); }
+            document.getElementById('mission').value = "";
+            document.getElementById('distance').value = "";
+            document.getElementById('speed').value = "";
+            document.getElementById('consumption').value = "";
+            displayReports();
         }
         function displayReports() {
             var container = document.getElementById('report-list-container');
@@ -910,7 +545,7 @@
                     var tr = document.createElement('tr');
                     function createInfoCell(label, value, unit) {
                         var td = document.createElement('td');
-                        td.setAttribute('width', '30%');
+                        td.setAttribute('width', '33%');
                         var spanLabel = document.createElement('span');
                         spanLabel.className = 'text-white';
                         spanLabel.textContent = label;
@@ -936,7 +571,7 @@
                     anchor.appendChild(table);
                     var delBtn = document.createElement('button');
                     delBtn.className = 'delete-btn';
-                    delBtn.textContent = 'Delete';
+                    delBtn.textContent = 'ลบข้อมูล';
                     Object.assign(delBtn.style, {
                         marginTop: '5px',
                         padding: '5px 10px',
@@ -973,6 +608,27 @@
             localStorage.setItem('savedPolygonReports', JSON.stringify(savedReports));
             displayReports(); // Refresh UI
         }
+        function loadReportOnMap(linesData) {
+            if (polylineMeasure && polylineMeasure.clearAll) {
+                polylineMeasure.clearAll();
+            }
+            var formattedLines = linesData.map(function (line) {
+                return line.map(function (point) {
+                    return L.latLng(point.lat, point.lng);
+                });
+            });
+            if (formattedLines.length > 0) {
+                var bounds = L.polyline(formattedLines).getBounds();
+                map.fitBounds(bounds);
+            }
+            setTimeout(function () {
+                polylineMeasure._clearAllMeasurements();
+                polylineMeasure.seed(formattedLines);
+            }, 100);
+        }
+        window.addEventListener('load', function () {
+            displayReports();
+        });
     </script>
 </body>
 

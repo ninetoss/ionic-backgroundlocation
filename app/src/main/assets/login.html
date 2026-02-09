@@ -48,12 +48,13 @@
             const result = await response.json();
             // This part in your login.html is now correct because PHP returns "status": "success"
             if (result.status === "success") {
-                if (isLogin) {
-                    if (window.Android) {
-                        window.Android.onLoginSuccess(); // This will now execute
-                    }
+                if (isLogin && window.Android) {
+                    window.Android.onLoginSuccess(
+                        result.name,
+                        result.password,
+                        data.role
+                    );
                 }
-                // ...
             } else {
                 document.getElementById('msg').innerText = result.message;
             }

@@ -117,6 +117,7 @@ class StreamingService : Service(), ConnectChecker {
 
     private fun updateUI(status: String) {
         val intent = Intent("STREAM_STATUS")
+        intent.setPackage(packageName)
         intent.putExtra("status", status)
         sendBroadcast(intent)
     }

@@ -17,10 +17,13 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import com.pedro.library.view.OpenGlView
 import java.lang.ref.WeakReference
 
 class MainActivity : ComponentActivity() {
+
+    private var savedUserId: String = ""
 
     companion object {
         var webViewRef: WeakReference<WebView>? = null
@@ -55,11 +58,7 @@ class MainActivity : ComponentActivity() {
 
         // Register Receiver
         val filter = IntentFilter("STREAM_STATUS")
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(statusReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
-        } else {
-            registerReceiver(statusReceiver, filter)
-        }
+        ContextCompat.registerReceiver(this, statusReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
 
         // Permission logic
         requestInitialPermissions()
@@ -90,21 +89,22 @@ class MainActivity : ComponentActivity() {
         } catch (e: Exception) {}
     }
 
+    private fun startServiceCompat(intent: Intent) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(intent)
+        } else {
+            startService(intent)
+        }
+    }
+
     fun getAndroidInterface(): AndroidInterface = AndroidInterface(this)
 
     inner class AndroidInterface(private val mContext: Context) {
-        private var name: String = ""
-        private var password: String = ""
-        private var role: String = ""
         @JavascriptInterface
         fun startTracking() {
             val intent = Intent(this@MainActivity, LocationService::class.java)
             intent.action = LocationService.ACTION_SERVICE_START
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                startForegroundService(intent)
-            } else {
-                startService(intent)
-            }
+            startServiceCompat(intent)
         }
 
         @JavascriptInterface
@@ -115,63 +115,50 @@ class MainActivity : ComponentActivity() {
         }
 
         @JavascriptInterface
-        fun onLoginSuccess(userName: String, userPassword: String, role: String) {
-            name = userName
-            password = userPassword
-            webViewRef?.get()?.let { wv ->
+        fun onLoginSuccess(UserId: String, role: String) {
+            savedUserId = UserId 
+            MainActivity.webViewRef?.get()?.let { wv ->
                 wv.post {
                     if (role == "admin") {
-                    try {
-                        val inputStream = mContext.assets.open("leaflet_map_admin.html")
-                        val size = inputStream.available()
-                        val buffer = ByteArray(size)
-                        inputStream.read(buffer)
-                        inputStream.close()
-                        val htmlContent = String(buffer)
-
-                        wv.loadDataWithBaseURL(
-                            "https://www.example.com/", // Fake HTTPS domain
-                            htmlContent,
-                            "text/html",
-                            "UTF-8",
-                            null
-                        )
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                        // Fallback if reading fails
-                        wv.loadUrl("file:///android_asset/leaflet_map_admin.html")
-                    }
-                    } else {
-                    try {
-                        val inputStream = mContext.assets.open("leaflet_map.html")
-                        val size = inputStream.available()
-                        val buffer = ByteArray(size)
-                        inputStream.read(buffer)
-                        inputStream.close()
-                        val htmlContent = String(buffer)
-
-                        wv.loadDataWithBaseURL(
-                            "https://www.example.com/", // Fake HTTPS domain
-                            htmlContent,
-                            "text/html",
-                            "UTF-8",
-                            null
-                        )
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                        // Fallback if reading fails
-                        wv.loadUrl("file:///android_asset/leaflet_map.html")
-                    }
+                        try {
+                            val serviceIntent = Intent(mContext, LocationService::class.java).apply {
+                                action = LocationService.ACTION_START
+                                putExtra("USER_ID", UserId)
+                            }
+                            startServiceCompat(serviceIntent)
+                            val inputStream = mContext.assets.open("leaflet_map_server.html")
+                            val size = inputStream.available()
+                            val buffer = ByteArray(size)
+                            inputStream.read(buffer)
+                            inputStream.close()
+                            val htmlContent = String(buffer)
+                            wv.loadDataWithBaseURL("https://www.example.com/", htmlContent, "text/html", "UTF-8", null)
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                            wv.loadUrl("file:///android_asset/leaflet_map_server.html")
+                        }
+                    } else if (role == "sender") {
+                        try {
+                            val serviceIntent = Intent(mContext, LocationService::class.java).apply {
+                                action = LocationService.ACTION_START
+                                putExtra("USER_ID", UserId)
+                            }
+                            startServiceCompat(serviceIntent)
+                            val inputStream = mContext.assets.open("leaflet_map_service.html")
+                            val size = inputStream.available()
+                            val buffer = ByteArray(size)
+                            inputStream.read(buffer)
+                            inputStream.close()
+                            val htmlContent = String(buffer)
+                            wv.loadDataWithBaseURL("https://www.example.com/", htmlContent, "text/html", "UTF-8", null)
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                            wv.loadUrl("file:///android_asset/leaflet_map_service.html")
+                        }
                     }
                 }
             }
         }
-
-        @JavascriptInterface
-        fun getUserName(): String = name
-
-        @JavascriptInterface
-        fun getUserPassword(): String = password
 
         @JavascriptInterface
         fun startStreaming(url: String) {

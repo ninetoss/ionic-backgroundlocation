@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html>
+
 <head>
     <title>Login</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -22,19 +23,15 @@
     <p class="toggle" onclick="toggleMode()" id="toggleText">Register instead</p>
     <p id="msg" style="color: red; text-align: center;"></p>
 </div>
-
 <script>
     let isLogin = true;
-    // CHANGE THIS IP TO YOUR SERVER ADDRESS
     const BASE_URL = "https://dntservicetruck.co.th/android/"; 
-
     function toggleMode() {
         isLogin = !isLogin;
         document.getElementById('title').innerText = isLogin ? "Login" : "Register";
         document.getElementById('actionBtn').innerText = isLogin ? "Login" : "Register";
         document.getElementById('toggleText').innerText = isLogin ? "Register instead" : "Login instead";
     }
-
     async function performAction() {
         const user = document.getElementById('username').value;
         const pass = document.getElementById('password').value;
@@ -46,13 +43,11 @@
                 body: JSON.stringify({ username: user, password: pass })
             });
             const result = await response.json();
-            // This part in your login.html is now correct because PHP returns "status": "success"
             if (result.status === "success") {
                 if (isLogin && window.Android) {
                     window.Android.onLoginSuccess(
-                        result.name,
-                        result.password,
-                        data.role
+                        result.user_id,
+                        result.role
                     );
                 }
             } else {
@@ -64,4 +59,5 @@
     }
 </script>
 </body>
+
 </html>

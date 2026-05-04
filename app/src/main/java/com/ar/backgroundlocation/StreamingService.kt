@@ -6,8 +6,9 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.graphics.PixelFormat
-import android.hardware.Camera // <--- NEW IMPORT
+import android.hardware.Camera
 import android.os.Build
 import android.os.IBinder
 import android.view.Gravity
@@ -27,7 +28,12 @@ class StreamingService : Service(), ConnectChecker {
 
     override fun onCreate() {
         super.onCreate()
-        startForeground(101, createNotification())
+        
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            startForeground(101, createNotification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
+        } else {
+            startForeground(101, createNotification())
+        }
 
         try {
             windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager

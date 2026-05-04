@@ -3,16 +3,18 @@ package com.ar.backgroundlocation
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
+import android.graphics.Color
 import android.net.Uri
 import android.text.TextUtils
-import android.widget.Toast
-import android.graphics.Color
 import android.webkit.JavascriptInterface
+import android.webkit.ValueCallback
+import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.Toast
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -25,6 +27,7 @@ import java.lang.ref.WeakReference
 @Composable
 fun MainScreen(activity: MainActivity) {
     Box(modifier = Modifier.fillMaxSize()) {
+        // 1. OpenGL View
         AndroidView(
             factory = { ctx ->
                 OpenGlView(ctx).apply {
@@ -32,12 +35,13 @@ fun MainScreen(activity: MainActivity) {
                         android.view.ViewGroup.LayoutParams.MATCH_PARENT,
                         android.view.ViewGroup.LayoutParams.MATCH_PARENT
                     )
-                    // Assign to MainActivity static ref so we can use it there
                     MainActivity.openGlViewRef = this
                 }
             },
             modifier = Modifier.fillMaxSize()
         )
+
+        // 2. WebView
         AndroidView(
             factory = { ctx ->
                 WebView(ctx).apply {
@@ -45,11 +49,37 @@ fun MainScreen(activity: MainActivity) {
                         android.view.ViewGroup.LayoutParams.MATCH_PARENT,
                         android.view.ViewGroup.LayoutParams.MATCH_PARENT
                     )
-                    setBackgroundColor(Color.TRANSPARENT)                    
-                    settings.javaScriptEnabled = true
-                    settings.domStorageEnabled = true
-                    settings.cacheMode = WebSettings.LOAD_NO_CACHE
-                    settings.mediaPlaybackRequiresUserGesture = false // Helpful for WebRTC/Video
+                    settings.apply {
+                        javaScriptEnabled = true
+                        domStorageEnabled = true
+                        cacheMode = WebSettings.LOAD_NO_CACHE
+                        mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                        mediaPlaybackRequiresUserGesture = false
+                        allowFileAccess = true
+                        allowContentAccess = true
+                        allowFileAccessFromFileURLs = true
+                        allowUniversalAccessFromFileURLs = true
+                    }
+                    setBackgroundColor(Color.TRANSPARENT)
+
+                    // Enable debugging
+                    WebView.setWebContentsDebuggingEnabled(true)
+
+                    // Bind the interfaces
+                    addJavascriptInterface(WebAppInterface(ctx), "AndroidInterface")
+                    addJavascriptInterface(activity.getAndroidInterface(), "Android")
+
+                    webChromeClient = object : WebChromeClient() {
+                        override fun onShowFileChooser(
+                            webView: WebView?,
+                            filePathCallback: ValueCallback<Array<Uri>>?,
+                            fileChooserParams: FileChooserParams?
+                        ): Boolean {
+                            activity.openFileChooser(filePathCallback)
+                            return true
+                        }
+                    }
+
                     webViewClient = object : WebViewClient() {
                         override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
                             val url = request?.url?.toString() ?: return null
@@ -57,26 +87,29 @@ fun MainScreen(activity: MainActivity) {
                                 try {
                                     val assetPath = url.replace("https://www.example.com/", "")
                                     val mimeType = when {
-                                        assetPath.endsWith(".html") -> "text/html"
-                                        assetPath.endsWith(".js") -> "text/javascript"
-                                        assetPath.endsWith(".css") -> "text/css"
-                                        assetPath.endsWith(".svg") -> "image/svg+xml"
-                                        assetPath.endsWith(".png") -> "image/png"
-                                        assetPath.endsWith(".jpg") -> "image/jpeg"
-                                        assetPath.endsWith(".gif") -> "image/gif"
+                                        assetPath.contains(".html") -> "text/html"
+                                        assetPath.contains(".js") -> "text/javascript"
+                                        assetPath.contains(".css") -> "text/css"
+                                        assetPath.contains(".svg") -> "image/svg+xml"
+                                        assetPath.contains(".png") -> "image/png"
+                                        assetPath.contains(".jpg") -> "image/jpeg"
+                                        assetPath.contains(".gif") -> "image/gif"
+                                        assetPath.contains(".json") -> "application/json"
                                         else -> "text/plain"
-                                    }                                    
+                                    }
                                     val inputStream = ctx.assets.open(assetPath)
                                     return WebResourceResponse(mimeType, "UTF-8", inputStream)
                                 } catch (e: Exception) {
-                                    e.printStackTrace()
+                                    // Let it fall through to network if not found in assets, 
+                                    // but usually these are local assets
                                 }
                             }
                             return super.shouldInterceptRequest(view, request)
                         }
                     }
-                    addJavascriptInterface(activity.getAndroidInterface(), "Android")
+
                     MainActivity.webViewRef = WeakReference(this)
+
                     try {
                         val inputStream = ctx.assets.open("login.html")
                         val size = inputStream.available()
@@ -100,6 +133,7 @@ class WebAppInterface(private val context: Context) {
     fun startLiveStream(description: String) {
         validateMobileLiveIntent(context, description)
     }
+
     private fun validateMobileLiveIntent(context: Context, description: String) {
         if (canResolveMobileLiveIntent(context)) {
             startMobileLive(context, description)
@@ -107,6 +141,7 @@ class WebAppInterface(private val context: Context) {
             Toast.makeText(context, "Please Update your Youtube app.", Toast.LENGTH_SHORT).show()
         }
     }
+
     private fun canResolveMobileLiveIntent(context: Context): Boolean {
         val intent = Intent("com.google.android.youtube.intent.action.CREATE_LIVE_STREAM")
             .setPackage("com.google.android.youtube")
@@ -114,6 +149,7 @@ class WebAppInterface(private val context: Context) {
         val resolveInfo = pm.queryIntentActivities(intent, 0)
         return resolveInfo != null && resolveInfo.isNotEmpty()
     }
+
     private fun startMobileLive(context: Context, description: String) {
         val intent = Intent("com.google.android.youtube.intent.action.CREATE_LIVE_STREAM")
             .setPackage("com.google.android.youtube")
@@ -127,31 +163,7 @@ class WebAppInterface(private val context: Context) {
         }
         context.startActivity(intent)
     }
-    @JavascriptInterface
-    fun startGPSTracking() {
-        val intent = Intent(context, LocationService::class.java) // Real GPS
-        intent.action = LocationService.ACTION_SERVICE_START
-        context.startService(intent)
-    }
-    @JavascriptInterface
-    fun startServerTracking() {
-        // LocationServer is missing, using LocationService as a placeholder or it might be intended to be the same service
-        val intent = Intent(context, LocationService::class.java) 
-        intent.action = LocationService.ACTION_SERVICE_START
-        context.startService(intent)
-    }
-    @JavascriptInterface
-    fun stopGPSTracking() {
-        val intent = Intent(context, LocationService::class.java)
-        intent.action = LocationService.ACTION_SERVICE_STOP
-        context.startService(intent)
-    }
-    @JavascriptInterface
-    fun stopServerTracking() {
-        val intent = Intent(context, LocationService::class.java)
-        intent.action = LocationService.ACTION_SERVICE_STOP
-        context.startService(intent)
-    }
+
     @JavascriptInterface
     fun onLoginSuccess(UserId: String, role: String) {
         MainActivity.webViewRef?.get()?.let { wv ->
@@ -164,8 +176,8 @@ class WebAppInterface(private val context: Context) {
                         inputStream.read(buffer)
                         inputStream.close()
                         val htmlContent = String(buffer)
-                        wv.loadDataWithBaseURL("https://www.example.com/", htmlContent, "text/html", "UTF-8", null )
-                    }   catch (e: Exception) {
+                        wv.loadDataWithBaseURL("https://www.example.com/", htmlContent, "text/html", "UTF-8", null)
+                    } catch (e: Exception) {
                         e.printStackTrace()
                         wv.loadUrl("file:///android_asset/leaflet_map_server.html")
                     }
@@ -177,8 +189,8 @@ class WebAppInterface(private val context: Context) {
                         inputStream.read(buffer)
                         inputStream.close()
                         val htmlContent = String(buffer)
-                        wv.loadDataWithBaseURL("https://www.example.com/", htmlContent, "text/html", "UTF-8", null )
-                    }   catch (e: Exception) {
+                        wv.loadDataWithBaseURL("https://www.example.com/", htmlContent, "text/html", "UTF-8", null)
+                    } catch (e: Exception) {
                         e.printStackTrace()
                         wv.loadUrl("file:///android_asset/leaflet_map_service.html")
                     }

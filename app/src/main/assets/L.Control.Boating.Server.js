@@ -1,13 +1,14 @@
 L.Control.Boating = L.Control.extend({
     options: {
         position: 'topleft',
-        legendPosition: 'bottomleft',
+        legendPosition: 'topright',
         boatColor: '#3388ff',      // Color for "Me"
         peerColor: '#ff8833',      // New: Color for other users
-        lineColor1: '#3388ff',
-        lineColor2: '#3388ff',
+        lineColor1: 'transparent',
+        lineColor2: 'transparent',
         circleColor: '#3388ff',
-        cacheLength: 4
+        cacheLength: 4,
+        boatName: '' // Add a default name for the local device
     },
     onAdd: function (map) {
         this.peers = {};           // Store other users here
@@ -29,39 +30,93 @@ L.Control.Boating = L.Control.extend({
         this.legend.onAdd = function (map) {
             const container = L.DomUtil.create('div', 'leaflet-control leaflet-bar leaflet-control-boating-legend')
             container.innerHTML = `
-            <table>
-            <tbody>
-            <tr><td colspan="2" class="double" id="heading"></td></tr>
-            <tr><td colspan="2" class="double" id="knots"></td></tr>
-            <tr><th>lat</th><td id="lat"></td></tr>
-            <tr><th>lon</th><td id="lng"></td></tr>
-            </tbody>
-            </table>`
+            <div id="weather-sidebar-widget-item" style="align-items: center;">
+                <div id="dashboard_container">
+                    <div class="detail-item-rigth">
+                        <div class="detail-label">
+                            <span class="current-condition-text" id="boatName"></span>
+                        </div>
+                        <div class="detail-label">
+                            <span class="current-condition-text">TOTAL TIME</span>
+                        </div>
+                        <div class="detail-value flex-center">
+                            <div class="detail-item">
+                                <div class="detail-value flex-center">
+                                    <div class="f-temp-sm">
+                                        <span id="timeElapsed"></span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="detail-label">
+                            <span class="current-condition-text">HEADING</span>
+                        </div>
+                        <div class="detail-value flex-center">
+                            <div class="detail-item">
+                                <div class="detail-value flex-center">
+                                    <div class="f-heading">
+                                        <span id="heading"> °</span>
+                                        <span style='vertical-align: super; font-size: 15px;'>°</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="detail-label">
+                            <span class="current-condition-text">SPEED</span>
+                        </div>
+                        <div class="detail-value flex-center">
+                            <div class="detail-item">
+                                <div class="detail-value flex-center">
+                                    <div class="f-heading">
+                                        <span id="knots"></span>
+                                        <span
+                                            style="font-weight: bold; color: var(--text-main); font-size:10px;">kt</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="detail-label">
+                            <span class="current-condition-text">DISTANCE</span>
+                        </div>
+                        <div class="detail-value flex-center">
+                            <div class="detail-item">
+                                <div class="detail-value flex-center">
+                                    <div class="f-heading">
+                                        <span id="totalDist"></span>
+                                        <span
+                                            style="font-weight: bold; color: var(--text-main); font-size:7px;">NM</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>`
+            this.boatName = container.querySelector('#boatName')
             this.heading = container.querySelector('#heading')
             this.knots = container.querySelector('#knots')
-            this.lat = container.querySelector('#lat')
-            this.lng = container.querySelector('#lng')
+            this.timeElapsed = container.querySelector('#timeElapsed')
+            this.totalDist = container.querySelector('#totalDist')
             return container
         }
-        this.boat = this.createBoatMarker(this.options.boatColor);      
+        this.boat = this.createBoatMarker(this.options.boatColor);
         this.circle = L.circle([0, 0], { color: this.options.circleColor, stroke: false })
         this.line = L.polyline([[0, 0], [0, 0]], { color: this.options.lineColor2, lineCap: 'square' })
         this.linebg = L.polyline([[0, 0], [0, 0]], { color: this.options.lineColor1 })
-        this.track = L.polyline([], { color: this.options.boatColor, weight: 3 })
-        this.viewedRouteLayer = L.polyline([], { color: '#3388ff', weight: 3 });        
+        this.track = L.polyline([], { color: '#3388ff', weight: 3 })
+        this.viewedRouteLayer = L.polyline([], { color: '#3388ff', weight: 3 });
         setTimeout(() => this.updateRouteList(), 500);
         return container
     },
-    createBoatMarker: function(color) {
+    createBoatMarker: function (color) {
         const marker = L.marker([0, 0], {
             icon: L.divIcon({
-                iconAnchor: [12.5, 12.5],
-                iconSize: [25, 25],
-                className: 'boat',
-                html: `
-                <svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" class="boat-svg">
-                <path d="M 128 512 C 128 512 128 128 256 0 C 384 128 384 512 384 512 Z" fill="${color}"/>
-                </svg>`,
+                iconAnchor: [11.5, 11.5],
+                iconSize: [23, 23],
+                className: 'ship',
+                html: `<svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" class="boat-svg" style="filter: drop-shadow(0px 0px 3px rgba(255,255,255,0.8));">
+                <path d="M 128 512 C 128 512 128 128 256 0 C 384 128 384 512 384 512 Z" fill="${color}" stroke="white" stroke-width="40" stroke-linejoin="round"/>
+            </svg>`
             })
         });
         marker.on('add', function () {
@@ -76,98 +131,176 @@ L.Control.Boating = L.Control.extend({
     isLocating: function () { return this.icon.classList.contains('locating') },
     isFollowing: function () { return this.icon.classList.contains('following') },
     onClick: function () {
+        if (window.activeSearchTrack && window.activeSearchTrack.name) {
+            if (this.isFollowing()) {
+                if (window.activeSearchTrack.session) this.saveRoute(window.activeSearchTrack.session);
+                if (this._map.hasLayer(window.activeSearchTrack.line)) this._map.removeLayer(window.activeSearchTrack.line);
+                if (this._map.hasLayer(window.activeSearchTrack.circle)) this._map.removeLayer(window.activeSearchTrack.circle);
+                window.activeSearchTrack.name = null;
+                window.activeSearchTrack.session = null;
+                this.icon.classList.remove('following', 'requesting', 'locating');
+                this._map.removeControl(this.legend);
+                this.stopStopwatch();
+            } else {
+                this._map.panTo(window.activeSearchTrack.session.lastLatLng);
+                this.follow();
+            }
+            return;
+        }
+        if (this.followedPeerId && this.sessionData) {
+            if (this.isFollowing()) {
+                this.saveRoute(this.sessionData);
+                this.followedPeerId = null;
+                this.sessionData = null;
+                if (this._map.hasLayer(this.track)) this._map.removeLayer(this.track);
+                if (this._map.hasLayer(this.circle)) this._map.removeLayer(this.circle);
+                this.icon.classList.remove('following', 'requesting', 'locating');
+                this._map.removeControl(this.legend);
+                this.stopStopwatch();
+            } else {
+                this._map.panTo(this.sessionData.lastLatLng);
+                this.follow();
+            }
+            return;
+        }
         if (this.viewedRouteLayer && this._map.hasLayer(this.viewedRouteLayer)) {
             this._map.removeLayer(this.viewedRouteLayer);
             return;
         }
-        if (this.isFollowing()) {
-            this.stop()
-        } else if (this.isLocating()) {
-            this._map.panTo(this.lastPosition.latlng)
-            this.follow()
-        } else if (!this.isRequesting()) {
-            this.request()
-        }
+        if (this.isFollowing()) this.stop()
+        else if (this.isLocating()) { this._map.panTo(this.lastPosition.latlng); this.follow(); }
+        else if (!this.isRequesting()) this.request()
     },
     request: function () {
         this._map.on('moveend', this.onMoveEnd, this)
         this._map.on('dragstart', this.onDragStart, this)
+        this._map.on('locationfound', this.onLocationFound, this)
+        this._map.on('locationerror', this.onLocationError, this)
+        this._map.on('zoomend', this.updateSizes, this)
+        this._map.locate({ watch: true, enableHighAccuracy: true })
         this.icon.classList.remove('following')
         this.icon.classList.remove('locating')
-        this.icon.classList.add('requesting')     
+        this.icon.classList.add('requesting')
         if (window.Android && window.Android.startTracking) {
             window.Android.startTracking();
         }
+        this.myStartTime = new Date();
+        this.myTotalDistance = 0;
+        this.myLastLatLng = null;
     },
     stop: function () {
-        if (this.sessionData) {
-            this.saveRoute(this.sessionData);
-            this.sessionData = null;
-        }
+        this._map.stopLocate()
         this._map.off('moveend', this.onMoveEnd, this)
         this._map.off('dragstart', this.onDragStart, this)
+        this._map.off('locationfound', this.onLocationFound, this)
+        this._map.off('locationerror', this.onLocationError, this)
+        this._map.off('zoomend', this.updateSizes, this) // <-- Add this line
         this._map.options.scrollWheelZoom = true
         this._map.options.doubleClickZoom = true
         this.icon.classList.remove('requesting')
         this.icon.classList.remove('following')
-        this.icon.classList.remove('locating')        
-        if (this.legend && this.legend._map) this._map.removeControl(this.legend)
+        this.icon.classList.remove('locating')
+        this._map.removeControl(this.legend)
         this._map.removeLayer(this.circle)
         this._map.removeLayer(this.linebg)
         this._map.removeLayer(this.line)
         this._map.removeLayer(this.boat)
-        this._map.removeLayer(this.track)
-        this.track.setLatLngs([]);   
-        if (this.viewedRouteLayer) {
-            this._map.removeLayer(this.viewedRouteLayer);
+        if (this.sessionData) {
+            this.saveRoute(this.sessionData);
+            this.sessionData = null;
         }
-        for (let id in this.peers) {
-            const peer = this.peers[id];
-            this._map.removeLayer(peer.boat);
-            this._map.removeLayer(peer.track);
+        if (this._map) {
+            this._map.stopLocate()
+            this._map.off('moveend', this.onMoveEnd, this);
+            this._map.off('dragstart', this.onDragStart, this);
+            this._map.off('locationfound', this.onLocationFound, this)
+            this._map.off('locationerror', this.onLocationError, this)
+            this._map.off('zoomend', this.updateSizes, this) // <-- Add this line
+            this._map.options.scrollWheelZoom = true;
+            this._map.options.doubleClickZoom = true;
+            if (this.legend && this.legend._map) {
+                this._map.removeControl(this.legend);
+            }
+            if (this._map.hasLayer(this.circle)) this._map.removeLayer(this.circle);
+            if (this._map.hasLayer(this.linebg)) this._map.removeLayer(this.linebg);
+            if (this._map.hasLayer(this.line)) this._map.removeLayer(this.line);
+            if (this._map.hasLayer(this.boat)) this._map.removeLayer(this.boat);
+            if (this._map.hasLayer(this.track)) this._map.removeLayer(this.track);
+            if (this.viewedRouteLayer && this._map.hasLayer(this.viewedRouteLayer)) {
+                this._map.removeLayer(this.viewedRouteLayer);
+            }
+            for (let userId in this.peers) {
+                if (this._map.hasLayer(this.peers[userId])) {
+                    this._map.removeLayer(this.peers[userId]);
+                }
+            }
         }
-        this.peers = {}; // Reset peers list
+        this.track.setLatLngs([]);
+        this.icon.classList.remove('requesting', 'following', 'locating');
+        this.peers = {};
+        this.peerData = {};
+        this.renderPeerList();
         if (window.Android && window.Android.stopTracking) {
             window.Android.stopTracking();
         }
+        if (this.inactiveMarkers) {
+            if (window.template5) {
+                window.template5.clearLayers();
+            } else {
+                for (let boatName in this.inactiveMarkers) {
+                    if (this._map && this._map.hasLayer(this.inactiveMarkers[boatName])) {
+                        this._map.removeLayer(this.inactiveMarkers[boatName]);
+                    }
+                }
+            }
+            this.inactiveMarkers = {}; // Reset the dictionary
+        }
         this.stopPolling();
+        this.myStartTime = null;
+        this.myTotalDistance = 0;
+        this.myLastLatLng = null;
     },
     onDragStart: function () {
         if (this.isFollowing()) {
             this.unfollow()
         }
-    },   
+    },
     onMoveEnd: function () {
         if ((this.isLocating() || this.isFollowing()) && this.lastPosition) {
             this.updateLine(this.lastPosition)
         }
     },
-    startPolling: function () {
-        if (this._pollInterval) return;
-        this._fetchLocation();
-        this._pollInterval = setInterval(this._fetchLocation.bind(this), 5000);
-    },    
-    stopPolling: function () {
-        if (this._pollInterval) {
-            clearInterval(this._pollInterval);
-            this._pollInterval = null;
-        }
-    },    
     follow: function () {
         this._map.options.scrollWheelZoom = 'center'
         this._map.options.doubleClickZoom = 'center'
         this.icon.classList.remove('requesting')
         this.icon.classList.remove('locating')
         this.icon.classList.add('following')
-    },    
+    },
     unfollow: function () {
-        this._map.options.scrollWheelZoom = true
-        this._map.options.doubleClickZoom = true
-        this.icon.classList.remove('requesting')
-        this.icon.classList.remove('following')
-        this.icon.classList.add('locating')
+        this._map.options.scrollWheelZoom = true;
+        this._map.options.doubleClickZoom = true;
+        this.icon.classList.remove('requesting', 'following');
+        this.icon.classList.add('locating');
+        if (this._map.hasLayer(this.circle)) {
+            this._map.removeLayer(this.circle);
+        }
+        if (this.sessionData) {
+            this.saveRoute(this.sessionData);
+            this.sessionData = null;
+            this.followedPeerId = null;
+            this.track.setLatLngs([]);
+            if (this._map.hasLayer(this.track)) {
+                this._map.removeLayer(this.track);
+            }
+        }
     },
     saveRoute: function (session) {
+        if (!session || session.path.length < 2) return;
+        var myBoatName = this.options.boatName || this.options.myBoatName || 'Me';
+        if (session.boatName === myBoatName) {
+            return;
+        }
         var endTime = new Date();
         var startTime = session.startTime;
         var durationMs = endTime - startTime;
@@ -177,16 +310,14 @@ L.Control.Boating = L.Control.extend({
         var avgSpeed = durationHours > 0 ? (distanceNM / durationHours) : 0;
         var timeRoute = "";
         var totalSeconds = Math.floor(durationMs / 1000);
-        var days = Math.floor(totalSeconds / 86400);
-        var remainingSeconds = totalSeconds % 86400;
-        var hours = Math.floor(remainingSeconds / 3600);
-        var minutes = Math.floor((remainingSeconds % 3600) / 60);
-        var seconds = Math.round(remainingSeconds % 60);
-        if (days > 0) { timeRoute += days + "d "; }
-        if (hours > 0 || days > 0) { timeRoute += hours + "h "; }
+        var hours = Math.floor(totalSeconds / 3600);
+        var minutes = Math.floor((totalSeconds % 3600) / 60);
+        var seconds = totalSeconds % 60;
+        if (hours > 0) { timeRoute += hours + "h "; }
         timeRoute += minutes + "m " + seconds + "s";
         var routeItem = {
             id: Date.now(),
+            boatName: session.boatName,
             date: startTime.toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric', calendar: 'buddhist' }),
             startTime: startTime.toLocaleTimeString('th-TH'),
             endTime: endTime.toLocaleTimeString('th-TH'),
@@ -214,10 +345,14 @@ L.Control.Boating = L.Control.extend({
             anchor.href = '#';
             anchor.className = 'report-routes';
             anchor.onclick = function () { return false; };
-            var title = document.createElement('h5');
-            title.className = 'text-white text-uppercase m-b-20';
-            title.textContent = item.date + ' เริ่มเวลา ' + item.startTime + ' - ' + item.endTime + ' น.';
-            anchor.appendChild(title);
+            var titleName = document.createElement('h5');
+            titleName.className = 'text-white text-uppercase m-b-20';
+            titleName.textContent = '' + item.boatName + '';
+            anchor.appendChild(titleName);
+            var titleTime = document.createElement('h5');
+            titleTime.className = 'text-white text-uppercase m-b-20';
+            titleTime.textContent = '' + item.date + ' เวลา ' + item.startTime + ' - ' + item.endTime + ' น.';
+            anchor.appendChild(titleTime);
             var table = document.createElement('table');
             table.setAttribute('width', '100%');
             var tbody = document.createElement('tbody');
@@ -245,18 +380,14 @@ L.Control.Boating = L.Control.extend({
             tbody.appendChild(tr);
             table.appendChild(tbody);
             anchor.appendChild(table);
+            var actionContainer = document.createElement('div');
+            actionContainer.style.display = 'flex';
+            actionContainer.style.justifyContent = 'space-between';
+            actionContainer.style.marginTop = '0px';
             var deleteBtn = document.createElement('button');
-            deleteBtn.className = 'delete-btn';
-            deleteBtn.setAttribute('data-id', item.id);
-            deleteBtn.textContent = 'ลบข้อมูล';
-            deleteBtn.style.fontSize = '0.8rem';
-            deleteBtn.style.marginTop = '0px';
-            deleteBtn.style.padding = '5px 10px';
-            deleteBtn.style.backgroundColor = 'rgb(220, 53, 69)';
-            deleteBtn.style.color = 'white';
-            deleteBtn.style.border = 'none';
-            deleteBtn.style.borderRadius = '3px';
-            deleteBtn.style.cursor = 'pointer';
+            deleteBtn.className = 'btn btn-danger';
+            deleteBtn.style.fontSize = '14px';
+            deleteBtn.innerHTML = '<i class="fa fa-trash" style="font-size: 20px; margin-right: 5px;"></i> ลบ';
             anchor.appendChild(deleteBtn);
             li.appendChild(anchor);
             anchor.addEventListener('click', (e) => {
@@ -264,9 +395,12 @@ L.Control.Boating = L.Control.extend({
                 this.viewRoute(item);
             });
             deleteBtn.addEventListener('click', (e) => {
-                e.stopPropagation(); // Stop event from bubbling to the anchor
+                e.stopPropagation();
                 this.deleteRoute(item.id);
             });
+            actionContainer.appendChild(deleteBtn);
+            li.appendChild(anchor);
+            li.appendChild(actionContainer);
             container.appendChild(li);
         });
     },
@@ -282,7 +416,7 @@ L.Control.Boating = L.Control.extend({
     },
     viewRoute: function (item) {
         if (!item.path || item.path.length === 0) return;
-        if (this.viewedRouteLayer) {
+        if (this.viewedRouteLayer && this._map.hasLayer(this.viewedRouteLayer)) {
             this.viewedRouteLayer.setLatLngs([]);
             this._map.removeLayer(this.viewedRouteLayer);
         }
@@ -292,16 +426,18 @@ L.Control.Boating = L.Control.extend({
         this._map.fitBounds(this.viewedRouteLayer.getBounds());
     },
     onLocationFound: function (e) {
-        // Determine User ID (default to "Me")
         const userId = e.UserId || 'Me';
-
+        const number = e.Number;
+        const name = e.Name;
+        const type = e.Type;
+        const unit_name = e.UnitName;
         if (userId === 'Me') {
             this.updateMyself(e);
         } else {
-            this.updatePeer(userId, e);
+            this.updatePeer(userId, number, name, type, unit_name, e);
         }
     },
-    updateMyself: function(e) {
+    updateMyself: function (e) {
         e.smooth = this.smoothMotion(e, this.myMotionCache);
         e.latlngDMS = this.latlngDMS(e);
         if (this.isRequesting()) {
@@ -309,7 +445,8 @@ L.Control.Boating = L.Control.extend({
                 startTime: new Date(),
                 totalDistance: 0,
                 path: [e.latlng],
-                lastLatLng: e.latlng
+                lastLatLng: e.latlng,
+                boatName: this.options.boatName || this.options.myBoatName || 'Me'
             };
             this._map.addControl(this.legend)
             this._map.addLayer(this.circle)
@@ -319,37 +456,272 @@ L.Control.Boating = L.Control.extend({
             this._map.addLayer(this.track)
             this.follow()
         }
-        if (this.isFollowing()) {
-            this._map.panTo(e.latlng)
+        if (!this.followedPeerId || this.followedPeerId === 'Me') {
+            if (this.isFollowing()) {
+                this._map.setView(e.latlng, 20);
+            }
+            if (this.sessionData) {
+                const dist = e.latlng.distanceTo(this.sessionData.lastLatLng);
+                this.sessionData.totalDistance += dist;
+                this.sessionData.path.push(e.latlng);
+                this.sessionData.lastLatLng = e.latlng;
+            }
+            const myName = this.sessionData ? this.sessionData.boatName : 'Me';
+            this.updateLegend(e, myName);
+            this.updateCircle(e);
+            this.updateLine(e);
+            this.track.addLatLng(e.latlng);
         }
-        if (this.sessionData) {
-            const dist = e.latlng.distanceTo(this.sessionData.lastLatLng);
-            this.sessionData.totalDistance += dist;
-            this.sessionData.path.push(e.latlng);
-            this.sessionData.lastLatLng = e.latlng;
-        }
-        this.updateLegend(e)
-        this.updateCircle(e)
-        this.updateLine(e)
-        this.updateBoat(this.boat, e) // Modified to accept the boat object
-        this.track.addLatLng(e.latlng);
+        this.updateBoat(this.boat, e)
         this.lastPosition = e
+        this.updateSizes()
     },
-    updatePeer: function(id, e) {
-        if (!this.peers[id]) {
-            this.peers[id] = {
-                boat: this.createBoatMarker(this.options.peerColor),
-                // track: L.polyline([], { color: this.options.peerColor, weight: 2, opacity: 0.7 }),
-                motionCache: []
-            };
-            this._map.addLayer(this.peers[id].boat);
-            this._map.addLayer(this.peers[id].track);
-            this.peers[id].boat.bindPopup("User: " + id);
+    updatePeer: function (userId, number, name, type, unit_name, e) {
+        if (!this.peerData) {
+            this.peerData = {};
         }
-        const peer = this.peers[id];
-        e.smooth = this.smoothMotion(e, peer.motionCache);
-        this.updateBoat(peer.boat, e);
-        peer.track.addLatLng(e.latlng);
+        const speedVal = parseFloat(e.speed) || 0;
+        const isDocked = speedVal <= 0;
+        const currentColor = isDocked ? '#ff8833' : this.options.peerColor;
+        this.peerData[userId] = {
+            number: number || 'Unknown',
+            name: name || 'Unknown',
+            type: type || 'Unknown',
+            unit_name: unit_name || 'Unknown',
+            latlng: e.latlng,
+            speed: e.speed,     // <--- ADD THIS
+            heading: e.heading  // <--- ADD THIS
+        };
+        if (!this.peers[userId]) {
+            const marker = L.marker(e.latlng, {
+                icon: L.divIcon({
+                    iconAnchor: [11.5, 11.5],
+                    iconSize: [23, 23],
+                    className: 'boat peer-boat',
+                    html: `<svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" style="filter: drop-shadow(0px 0px 3px rgba(255,255,255,0.8));">
+                    <path d="M 128 512 C 128 512 128 128 256 0 C 384 128 384 512 384 512 Z" fill="${currentColor}" stroke="white" stroke-width="40" stroke-linejoin="round"/>
+                    </svg>`
+                })
+            });
+            marker.bindTooltip(`${number || 'Unknown'}`, {
+                permanent: true,
+                direction: 'top',
+                className: 'transparent-tooltip'
+            });
+            marker.on('add', function () {
+                this.svg = this.getElement().querySelector('svg');
+            });
+            marker.addTo(this._map);
+            this.peers[userId] = marker;
+        }
+        const marker = this.peers[userId];
+        marker.setLatLng(e.latlng);
+        marker.setTooltipContent(`${number || 'Unknown'}`);
+        if (marker.svg) {
+            marker.svg.style.transform = `rotate(${e.heading}deg)`;
+            const path = marker.svg.querySelector('path');
+            if (path && path.getAttribute('fill') !== currentColor) {
+                path.setAttribute('fill', currentColor);
+            }
+        }
+        if (this.isFollowing() && this.followedPeerId === String(userId)) {
+            this._map.setView(e.latlng, 20); // Keeps the map centered and zoomed
+            if (this._map.hasLayer(this.circle)) {
+                this.circle.setLatLng(e.latlng);
+                this.circle.setRadius(e.accuracy || 15);
+            }
+        }
+        if (this.followedPeerId === String(userId)) {
+            if (this.isFollowing()) {
+                this._map.setView(e.latlng, 20); // Keeps the map centered and zoomed
+            }
+            e.latlngDMS = this.latlngDMS(e);
+            let timeStr = "0h 0m 0s";
+            let distNM = "0.00";
+            if (this.sessionData) {
+                if (this.sessionData.lastLatLng) {
+                    const dist = e.latlng.distanceTo(this.sessionData.lastLatLng);
+                    this.sessionData.totalDistance += dist;
+                }
+                this.sessionData.path.push(e.latlng);
+                this.sessionData.lastLatLng = e.latlng;
+                this.track.addLatLng(e.latlng);
+                if (this.sessionData.startTime) {
+                    const diff = new Date() - this.sessionData.startTime;
+                    const h = Math.floor(diff / 3600000);
+                    const m = Math.floor((diff % 3600000) / 60000);
+                    const s = Math.floor((diff % 60000) / 1000);
+                    timeStr = h + "h " + m + "m " + s + "s";
+                }
+                distNM = (this.sessionData.totalDistance / 1852).toFixed(2);
+            }
+            if (this.legend) {
+                if (!this.legend._map) {
+                    this._map.addControl(this.legend);
+                }
+                const headingVal = Math.round(parseFloat(e.heading || 0));
+                const speedValNum = parseFloat(e.speed || 0).toFixed(2);
+                if (this.legend.boatName) this.legend.boatName.innerHTML = name || number || 'Unknown';
+                if (this.legend.heading) this.legend.heading.innerHTML = headingVal;
+                if (this.legend.knots) this.legend.knots.innerHTML = speedValNum;
+                if (this.legend.timeElapsed) this.legend.timeElapsed.innerHTML = timeStr;
+                if (this.legend.totalDist) this.legend.totalDist.innerHTML = distNM;
+            }
+        }
+        this.renderPeerList();
+    },
+    renderPeerList: function () {
+        const container = document.getElementById('peer-list-container');
+        if (!container) return;
+        container.innerHTML = '';
+        Object.keys(this.peerData).forEach(id => {
+            const peer = this.peerData[id];
+            const li = document.createElement('li');
+            li.id = `peer-item-${id}`;
+            li.style.marginBottom = '15px';
+            li.style.listStyle = 'none';
+            li.innerHTML = `<a href="#" class="report-routes" style="text-decoration: none; display: block;">
+            <h5 class="text-white text-uppercase m-b-20" style="margin: 0 0 3px 0;">${peer.name || 'Unknown'}</h5>
+            <table width="100%">
+            <tbody>
+            <tr>
+            <td>
+            <span class="text-white" style="display: block;">ประเภท ${peer.type || 'Unknown'}</span>
+            <span class="text-white" style="display: block;">สังกัด ${peer.unit_name || 'Unknown'}</span>
+            </td>
+            </tr>
+            </tbody>
+            </table>
+            </a>`;
+            li.addEventListener('click', (e) => {
+                e.preventDefault();
+                if (this.sessionData && this.followedPeerId !== String(id)) {
+                    this.saveRoute(this.sessionData);
+                    this.sessionData = null;
+                    this.track.setLatLngs([]);
+                }
+                this.followedPeerId = String(id);
+                this.icon.classList.remove('requesting', 'locating');
+                this.icon.classList.add('following');
+                if (this.legend && !this.legend._map) {
+                    this._map.addControl(this.legend);
+                }
+                if (!this._map.hasLayer(this.circle)) {
+                    this._map.addLayer(this.circle);
+                }
+                if (peer.latlng) {
+                    this.circle.setLatLng(peer.latlng);
+                    this.circle.setRadius(15);
+                }
+                if (!this.sessionData) {
+                    this.sessionData = {
+                        startTime: new Date(),
+                        totalDistance: 0,
+                        path: [],
+                        lastLatLng: null,
+                        boatName: peer.name
+                    };
+                    if (peer.latlng) {
+                        this.sessionData.path.push(peer.latlng);
+                        this.sessionData.lastLatLng = peer.latlng;
+                        this.track.setLatLngs([peer.latlng]);
+                    }
+                    if (!this._map.hasLayer(this.track)) {
+                        this._map.addLayer(this.track);
+                    }
+                }
+                if (this.legend) {
+                    const headingVal = Math.round(parseFloat(peer.heading || 0));
+                    const speedValNum = parseFloat(peer.speed || 0).toFixed(2);
+                    if (this.legend.boatName) this.legend.boatName.innerHTML = peer.name || 'Unknown';
+                    if (this.legend.heading) this.legend.heading.innerHTML = headingVal;
+                    if (this.legend.knots) this.legend.knots.innerHTML = speedValNum;
+                    if (this.legend.timeElapsed) this.legend.timeElapsed.innerHTML = "0h 0m 0s";
+                    if (this.legend.totalDist) this.legend.totalDist.innerHTML = "0.00";
+                }
+                if (this._map && peer.latlng) {
+                    this._map.setView(peer.latlng, 20);
+                }
+            });
+            container.appendChild(li);
+        });
+    },
+    trackPeerByName: function (name) {
+        let targetId = null;
+        for (let id in this.peerData) {
+            if (this.peerData[id].name === name) {
+                targetId = id;
+                break;
+            }
+        }
+        if (this.sessionData && this.followedPeerId !== String(targetId)) {
+            this.saveRoute(this.sessionData);
+            this.sessionData = null;
+            this.track.setLatLngs([]);
+        }
+        this.icon.classList.remove('requesting', 'locating');
+        this.icon.classList.add('following');
+        if (this.legend && !this.legend._map) {
+            this._map.addControl(this.legend);
+        }
+        if (!this._map.hasLayer(this.circle)) {
+            this._map.addLayer(this.circle);
+        }
+        if (!this.sessionData) {
+            this.sessionData = {
+                startTime: new Date(),
+                totalDistance: 0,
+                path: [],
+                lastLatLng: null,
+                boatName: name
+            };
+            if (!this._map.hasLayer(this.track)) {
+                this._map.addLayer(this.track);
+            }
+        }
+        if (targetId) {
+            this.followedPeerId = String(targetId);
+            const peer = this.peerData[targetId];
+            if (peer.latlng) {
+                this.circle.setLatLng(peer.latlng);
+                this.circle.setRadius(15);
+                this.sessionData.path.push(peer.latlng);
+                this.sessionData.lastLatLng = peer.latlng;
+                this.track.setLatLngs([peer.latlng]);
+                this._map.setView(peer.latlng, 20);
+            }
+            if (this.legend) {
+                const headingVal = Math.round(parseFloat(peer.heading || 0));
+                const speedValNum = parseFloat(peer.speed || 0).toFixed(2);
+                if (this.legend.boatName) this.legend.boatName.innerHTML = peer.name;
+                if (this.legend.heading) this.legend.heading.innerHTML = headingVal;
+                if (this.legend.knots) this.legend.knots.innerHTML = speedValNum;
+                if (this.legend.totalDist) this.legend.totalDist.innerHTML = "0.00";
+            }
+        } else {
+            if (this.legend && this.legend.boatName) {
+                this.legend.boatName.innerHTML = name;
+            }
+        }
+        this.startStopwatch();
+    },
+    startStopwatch: function () {
+        this.stopStopwatch(); // Ensure no duplicates run
+        this.stopwatchInterval = setInterval(() => {
+            if (this.sessionData && this.sessionData.startTime && this.legend && this.legend.timeElapsed) {
+                const diff = new Date() - this.sessionData.startTime;
+                const h = Math.floor(diff / 3600000);
+                const m = Math.floor((diff % 3600000) / 60000);
+                const s = Math.floor((diff % 60000) / 1000);
+                this.legend.timeElapsed.innerHTML = h + "h " + m + "m " + s + "s";
+            }
+        }, 1000);
+    },
+    stopStopwatch: function () {
+        if (this.stopwatchInterval) {
+            clearInterval(this.stopwatchInterval);
+            this.stopwatchInterval = null;
+        }
     },
     onLocationError: function (e) {
         console.error(e)
@@ -358,9 +730,39 @@ L.Control.Boating = L.Control.extend({
             this.stop()
         }
     },
+    updateSizes: function () {
+        if (!this._map) return;
+        const currentZoom = this._map.getZoom();
+        let newIconSize;
+        let newWeight; // We also need to step the line weight to match
+        if (currentZoom >= 15) {
+            newIconSize = 25;
+            newWeight = 1;    // Original maximum weight
+        } else if (currentZoom >= 8) {
+            newIconSize = 14;
+            newWeight = 0.25;    // Medium weight
+        } else {
+            newIconSize = 11;
+            newWeight = 0.5;    // Minimum weight
+        }
+        if (this.boat && this.boat.getElement()) {
+            const boatEl = this.boat.getElement();
+            boatEl.style.width = newIconSize + 'px';
+            boatEl.style.height = newIconSize + 'px';
+            boatEl.style.marginLeft = -(newIconSize / 2) + 'px';
+            boatEl.style.marginTop = -(newIconSize / 2) + 'px';
+            if (this.boat.svg) {
+                this.boat.svg.style.width = '100%';
+                this.boat.svg.style.height = '100%';
+            }
+        }
+        if (this.line) this.line.setStyle({ weight: newWeight });
+        if (this.linebg) this.linebg.setStyle({ weight: newWeight + 2 });
+    },
     updateCircle: function (e) {
         this.circle.setLatLng(e.latlng)
         this.circle.setRadius(e.accuracy)
+        this.circle.setStyle({ opacity: 1, fillOpacity: 0.2 });
     },
     updateBoat: function (boat, e) {
         const heading = e.smooth.heading;
@@ -373,7 +775,7 @@ L.Control.Boating = L.Control.extend({
         const zoom = this._map.getZoom()
         const mapBounds = this._map.getBounds()
         const heading = e.smooth.heading
-        const speed = e.smooth.speed        
+        const speed = e.smooth.speed
         const length = Math.max(
             mapBounds.getNorthWest().distanceTo(e.latlng),
             mapBounds.getNorthEast().distanceTo(e.latlng),
@@ -387,7 +789,6 @@ L.Control.Boating = L.Control.extend({
         )
         this.line.setLatLngs([e.latlng, dirPoint])
         this.linebg.setLatLngs([e.latlng, dirPoint])
-
         const metersPerPixel = 40000000 * this.cosD(e.latlng.lat) / (256 * Math.pow(2, zoom))
         const pixelsPerHour = speed / metersPerPixel * 3600
         this.line.setStyle({
@@ -395,14 +796,51 @@ L.Control.Boating = L.Control.extend({
             dashOffset: pixelsPerHour,
         })
     },
-    updateLegend: function (e) {
-        const nautic = 40000 / 360 / 60
-        const heading = Math.round(e.smooth.heading)
-        const speed = Math.round(e.smooth.speed * 36 / nautic) / 10
-        this.legend.heading.innerHTML = heading + ' °'
-        this.legend.knots.innerHTML = speed + ' kts'
-        this.legend.lat.innerHTML = e.latlngDMS.lat
-        this.legend.lng.innerHTML = e.latlngDMS.lng
+    updatePeerLegend: function (peerId) {
+        const peer = this.peers[peerId];
+        if (!peer || !this.legend) return;
+        const heading = Math.round(parseFloat(peer.heading || peer.bearing || 0));
+        const speed = parseFloat(peer.speed || 0).toFixed(2);
+        let dms = { lat: peer.lat.toFixed(5), lng: peer.lng.toFixed(5) };
+        if (this.latlngDMS) {
+            dms = this.latlngDMS({ latlng: L.latLng(peer.lat, peer.lng) });
+        }
+        if (this.legend.boatName) this.legend.boatName.innerHTML = peer.name || peerId;
+        if (this.legend.heading) this.legend.heading.innerHTML = heading;
+        if (this.legend.knots) this.legend.knots.innerHTML = speed;
+    },
+    updateLegend: function (e, boatName) {
+        let speed = 0;
+        let heading = 0;
+        if (e.smooth) {
+            const nautic = 40000 / 360 / 60;
+            heading = Math.round(e.smooth.heading);
+            speed = (Math.round(e.smooth.speed * 36 / nautic) / 10).toFixed(1);
+        } else {
+            heading = (e.heading || 0).toFixed(0);
+            speed = (parseFloat(e.speed) || 0).toFixed(1);
+        }
+        if (boatName && this.legend.boatName) {
+            this.legend.boatName.innerHTML = boatName;
+        }
+        if (this.myLastLatLng) {
+            this.myTotalDistance += this.myLastLatLng.distanceTo(e.latlng);
+        }
+        this.myLastLatLng = e.latlng;
+        const distNM = (this.myTotalDistance / 1852).toFixed(2);
+        let timeStr = "0h 0m 0s"; // Updated default format
+        if (this.myStartTime) {
+            const diff = new Date() - this.myStartTime;
+            const h = Math.floor(diff / 3600000);
+            const m = Math.floor((diff % 3600000) / 60000);
+            const s = Math.floor((diff % 60000) / 1000);
+            timeStr = h + "h " + m + "m " + s + "s";
+        }
+        if (this.legend.boatName) this.legend.boatName.innerHTML = this.options.boatName;
+        if (this.legend.heading) this.legend.heading.innerHTML = heading;  // Removed + ' °'
+        if (this.legend.knots) this.legend.knots.innerHTML = speed;        // Removed + ' kts'
+        if (this.legend.timeElapsed) this.legend.timeElapsed.innerHTML = timeStr;
+        if (this.legend.totalDist) this.legend.totalDist.innerHTML = distNM; // Removed + ' NM'
     },
     latlngDMS: function (e) {
         function dms(coord) {
@@ -443,11 +881,22 @@ L.Control.Boating = L.Control.extend({
 L.control.boating = function (options) {
     return new L.Control.Boating(options)
 }
-function receiveServerLocation(UserId, lat, lng, bearing, speed) {
+function receiveServerLocation(UserId, Number, Name, Type, UnitName, lat, lng, bearing, speed) {
+    if (UserId == 1) {
+        return;
+    }
     if (window.boatingControl) {
-        const id = UserId || "Me"; 
+        const id = UserId || "Me";
+        const number = Number;
+        const name = Name;
+        const type = Type;
+        const unit_name = UnitName;
         const locationEvent = {
-            UserId: id, // Pass the ID down
+            UserId: id,
+            Number: number,
+            Name: name,
+            Type: type,
+            UnitName: unit_name,
             latlng: L.latLng(lat, lng),
             accuracy: 10,
             heading: bearing,
@@ -456,8 +905,10 @@ function receiveServerLocation(UserId, lat, lng, bearing, speed) {
         window.boatingControl.onLocationFound(locationEvent);
     }
 }
-function receiveServiceLocation(UserId, lat, lng, bearing, speed) {
+function receiveServiceLocation(UserId, Number, lat, lng, bearing, speed) {
     if (window.boatingControl) {
+        const id = UserId;
+        const number = Number;
         const locationEvent = {
             latlng: L.latLng(lat, lng),
             accuracy: 10,
@@ -467,3 +918,189 @@ function receiveServiceLocation(UserId, lat, lng, bearing, speed) {
         window.boatingControl.onLocationFound(locationEvent);
     }
 }
+function receiveInactiveLocation(name, lat, lng) {
+    if (window.boatingControl && window.boatingControl._map) {
+        if (window.boatingControl.peerData) {
+            for (let id in window.boatingControl.peerData) {
+                if (window.boatingControl.peerData[id].name === name) {
+                    return; // Abort drawing the offline icon
+                }
+            }
+        }
+        const validLat = parseFloat(lat);
+        const validLng = parseFloat(lng);
+        if (isNaN(validLat) || isNaN(validLng)) return;
+        if (!window.boatingControl.inactiveMarkers) {
+            window.boatingControl.inactiveMarkers = {};
+        }
+        if (window.boatingControl.inactiveMarkers[name]) {
+            window.boatingControl.inactiveMarkers[name].setLatLng([validLat, validLng]);
+            return; // Stop the function here so a duplicate isn't created
+        }
+        const dockedIcon = L.divIcon({
+            iconAnchor: [11.5, 11.5],
+            iconSize: [23, 23],
+            className: 'boat peer-boat',
+            html: `<svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" style="transform: rotate(45deg); filter: drop-shadow(0px 0px 3px rgba(255,255,255,0.8));">
+                <path d="M 128 512 C 128 512 128 128 256 0 C 384 128 384 512 384 512 Z" fill="#202978" stroke="white" stroke-width="40" stroke-linejoin="round"/>
+            </svg>`
+        });
+        const marker = L.marker([validLat, validLng], { icon: dockedIcon });
+        marker.bindTooltip(`${name}`, {
+            permanent: true,
+            direction: 'top',
+            className: 'transparent-tooltip'
+        });
+        window.boatingControl.inactiveMarkers[name] = marker;
+        if (window.template5) {
+            marker.addTo(window.template5);
+        } else {
+            marker.addTo(window.boatingControl._map);
+        }
+    }
+}
+function purgeOfflineServerLocations(activeIdsString) {
+    if (!window.boatingControl || !window.boatingControl.peers) return;
+    try {
+        const activeIds = JSON.parse(activeIdsString).map(String);
+        for (let id in window.boatingControl.peers) {
+            if (!activeIds.includes(String(id))) {
+                const peerMarker = window.boatingControl.peers[id];
+                if (window.boatingControl._map.hasLayer(peerMarker)) {
+                    window.boatingControl._map.removeLayer(peerMarker);
+                }
+                delete window.boatingControl.peers[id];
+                if (window.boatingControl.peerData) {
+                    delete window.boatingControl.peerData[id];
+                }
+                window.boatingControl.renderPeerList();
+            }
+        }
+    } catch (e) {
+        console.error("Error parsing active IDs for purge:", e);
+    }
+}
+window.purgeInactiveLocations = function (inactiveNamesString) {
+    if (!window.boatingControl || !window.boatingControl.inactiveMarkers) return;
+    try {
+        const inactiveNames = JSON.parse(inactiveNamesString).map(String);
+        for (let name in window.boatingControl.inactiveMarkers) {
+            if (!inactiveNames.includes(String(name))) {
+                const marker = window.boatingControl.inactiveMarkers[name];
+                if (window.boatingControl._map.hasLayer(marker)) {
+                    window.boatingControl._map.removeLayer(marker);
+                }
+                if (window.template5 && window.template5.hasLayer(marker)) {
+                    window.template5.removeLayer(marker);
+                }
+                delete window.boatingControl.inactiveMarkers[name];
+            }
+        }
+    } catch (e) {
+        console.error("Error parsing inactive names for purge:", e);
+    }
+};
+window.liveMarkers = window.liveMarkers || {};
+window.wfsMarkers = window.wfsMarkers || {};
+window.liveBoatCluster = null;
+window.wfsBoatCluster = null;
+function initializeClusters(map) {
+    if (!window.liveBoatCluster) {
+        window.liveBoatCluster = L.markerClusterGroup({
+            animate: false,
+            animateAddingMarkers: false,
+            zoomToBoundsOnClick: false,
+            spiderfyOnMaxZoom: false,
+            showCoverageOnHover: false,
+            disableClusteringAtZoom: 13,
+            maxClusterRadius: 30,
+            iconCreateFunction: function (cluster) {
+                return L.divIcon({
+                    html: `<svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" style="transform: rotate(45deg); width: 100%; height: 100%; filter: drop-shadow(0px 0px 3px rgba(255,255,255,0.8));"> 
+                    <path d="M 128 512 C 128 512 128 128 256 0 C 384 128 384 512 384 512 Z" fill="#48975b" stroke="white" stroke-width="40" stroke-linejoin="round"/> 
+                    </svg>`,
+                    className: 'boat',
+                    iconAnchor: [11.5, 11.5],
+                    iconSize: [23, 23]
+                });
+            }
+        });
+        window.liveBoatCluster.addTo(map);
+    }
+    if (!window.wfsBoatCluster) {
+        window.wfsBoatCluster = L.markerClusterGroup({
+            animate: false,
+            animateAddingMarkers: false,
+            zoomToBoundsOnClick: false,
+            spiderfyOnMaxZoom: false,
+            showCoverageOnHover: false,
+            disableClusteringAtZoom: 13,
+            maxClusterRadius: 30,
+            iconCreateFunction: function (cluster) {
+                return L.divIcon({
+                    html: `<svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" style="transform: rotate(45deg); width: 100%; height: 100%; filter: drop-shadow(0px 0px 3px rgba(255,255,255,0.8));"> 
+                    <path d="M 128 512 C 128 512 128 128 256 0 C 384 128 384 512 384 512 Z" fill="#ff0000" stroke="white" stroke-width="40" stroke-linejoin="round"/> 
+                    </svg>`,
+                    className: 'wfs-boat',
+                    iconAnchor: [11.5, 11.5],
+                    iconSize: [23, 23]
+                });
+            }
+        });
+        window.wfsBoatCluster.addTo(map);
+    }
+}
+window.receiveLiveBoatLocation = function (name, lat, lng, heading, speed) {
+    const map = window.template6 || (window.boatingControl && window.boatingControl._map);
+    if (!map || isNaN(lat) || isNaN(lng)) return;
+    initializeClusters(map);
+    heading = parseFloat(heading) || 45;
+    const getIcon = (deg) => L.divIcon({
+        iconAnchor: [11.5, 11.5],
+        iconSize: [23, 23],
+        className: 'boat',
+        html: `<svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" style="transform: rotate(${deg}deg); width: 100%; height: 100%; filter: drop-shadow(0px 0px 3px rgba(255,255,255,0.8));"> 
+        <path d="M 128 512 C 128 512 128 128 256 0 C 384 128 384 512 384 512 Z" fill="#48975b" stroke="white" stroke-width="40" stroke-linejoin="round"/> 
+        </svg>`
+    });
+    if (window.liveMarkers[name]) {
+        const marker = window.liveMarkers[name];
+        marker.setLatLng([lat, lng]);
+        marker.setIcon(getIcon(heading));
+    } else {
+        const marker = L.marker([lat, lng], { icon: getIcon(heading), title: name, boatColor: '#48975b', boatLabel: '../assets/green-icon.png', heading: heading, speed: speed });
+        marker.bindTooltip(name, { permanent: true, direction: 'top', className: 'transparent-tooltip', offset: [0, -10] });
+        window.liveMarkers[name] = marker;
+        window.liveBoatCluster.addLayer(marker);
+    }
+    if (window.activeSearchTrack && window.activeSearchTrack.name === name) {
+        updateSearchTrack({ lat: lat, lng: lng });
+    }
+};
+window.receiveWfsBoatLocation = function (name, lat, lng, heading, speed) {
+    const map = window.template6 || (window.boatingControl && window.boatingControl._map);
+    if (!map || isNaN(lat) || isNaN(lng)) return;
+    initializeClusters(map);
+    heading = parseFloat(heading) || 0;
+    const getIcon = (deg) => L.divIcon({
+        iconAnchor: [11.5, 11.5],
+        iconSize: [23, 23],
+        className: 'wfs-boat',
+        html: `<svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" style="transform: rotate(${deg}deg); width: 100%; height: 100%; filter: drop-shadow(0px 0px 3px rgba(255,255,255,0.8));"> 
+        <path d="M 128 512 C 128 512 128 128 256 0 C 384 128 384 512 384 512 Z" fill="#ff0000" stroke="white" stroke-width="40" stroke-linejoin="round"/> 
+        </svg>`
+    });
+    if (window.wfsMarkers[name]) {
+        const marker = window.wfsMarkers[name];
+        marker.setLatLng([lat, lng]);
+        marker.setIcon(getIcon(heading));
+    } else {
+        const marker = L.marker([lat, lng], { icon: getIcon(heading), title: name, boatColor: '#ff0000', boatLabel: '../assets/red-icon.png', heading: heading, speed: speed });
+        marker.bindTooltip(name, { permanent: true, direction: 'top', className: 'transparent-tooltip', offset: [0, -10] });
+        window.wfsMarkers[name] = marker;
+        window.wfsBoatCluster.addLayer(marker);
+    }
+    if (window.activeSearchTrack && window.activeSearchTrack.name === name) {
+        updateSearchTrack({ lat: lat, lng: lng });
+    }
+};

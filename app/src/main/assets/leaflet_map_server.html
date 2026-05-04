@@ -6,8 +6,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/font-awesome/4.3.0/css/font-awesome.min.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/1.11.2/jquery.min.js"></script>
     <link rel="stylesheet" href="dist/leaflet-sidepanel.css">
     <script src="dist/leaflet-sidepanel.min.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+    <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+    <link rel="stylesheet" href="dist/leaflet-search.css" />
+    <script src="dist/leaflet-search.js"></script>
+    <link rel="stylesheet" href="dist/style.css" />
+    <link rel="stylesheet" href="dist/leaflet.zoomhome.css">
+    <script src="dist/leaflet.zoomhome.min.js"></script>
     <link rel="stylesheet" href="./L.Control.Boating.css" />
     <script src="./L.Control.Boating.Server.js"></script>
     <link rel="stylesheet" href="dist/Leaflet.PolylineMeasure.css">
@@ -18,6 +28,12 @@
     <script src="dist/ProvinceZone.js"></script>
     <script src="dist/MarineProvince.js"></script>
     <script src="dist/LineStrings.js"></script>
+    <script src="dist/ContourStrings.js"></script>
+    <link href="src/L.multiControl.css" rel="stylesheet">
+    <script src="src/L.multiControl.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script src="dist/leaflet.centermarker.js"></script>
     <style>
         html,
         body {
@@ -31,270 +47,1530 @@
             height: 100vh;
         }
 
-        .sidepanel-content {
-            font-size: 1rem;
+        .rouring-tools {
+            position: absolute;
+            left: 20px;
+            right: 20px;
+            top: 25px;
+            height: 200px;
+            background-color: transparent;
+            z-index: 999;
         }
 
-        .sidepanel-content h1 {
-            margin-top: 0;
-            margin-bottom: 0;
-            line-height: 0.75;
+        .boat,
+        .wfs-boat {
+            width: var(--boat-size, 11px) !important;
+            height: var(--boat-size, 11px) !important;
+        }
+
+        .transparent-tooltip {
+            visibility: hidden;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+
+        .show-map-tooltips .transparent-tooltip {
+            visibility: visible;
+            opacity: 1;
+        }
+
+        .leaflet-control-search {
+            background: #ffffff !important;
+            border: 2px solid rgba(0, 0, 0, 0.2) !important;
+            border-radius: 8px !important;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1) !important;
+            padding: 2px !important;
+            margin: 0 !important;
+            display: flex;
+            align-items: center;
+            width: 100% !important;
+            box-sizing: border-box !important;
+        }
+
+        .leaflet-control-search .search-input {
+            flex: 1 !important;
+            height: 30px !important;
+            font-size: 15px !important;
+            padding: 0 10px !important;
+            border: none !important;
+            outline: none !important;
+            background: transparent !important;
+        }
+
+        .leaflet-control-search .search-button {
+            width: 30px !important;
+            height: 30px !important;
+            flex-shrink: 0 !important;
+        }
+
+        .leaflet-control-search .search-tooltip {
+            width: 100% !important;
+            box-sizing: border-box !important;
+            margin-top: 4px !important;
+            border-radius: 8px !important;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1) !important;
+            background: #ffffff !important;
+            padding: 0 !important;
+            max-height: 300px !important;
+            overflow-y: auto !important;
+            overflow-x: hidden !important;
+        }
+
+        .leaflet-control-search .search-tooltip a:hover {
+            background-color: #f8f9fa !important;
+        }
+
+        .leaflet-control-search .search-tooltip a:last-child {
+            border-bottom: none !important;
+        }
+
+        .leaflet-control-basemapsSwitcher .basemapImg {
+            border: 1px solid transparent;
+            cursor: pointer;
+            transition: border-color 0.2s ease-in-out;
+            border-radius: 8px;
+        }
+
+        .leaflet-control-basemapsSwitcher .basemapImg.activeMap {
+            border-color: #222;
+        }
+
+        .leaflet-control-basemapsSwitcher {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 4px;
             width: 100%;
+            padding: 0;
+            box-sizing: border-box;
         }
 
-        .sidepanel-content h4 {
-            margin-top: 0;
-            margin-bottom: 0;
-            line-height: 0.75;
+        .basemapImg {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            background-color: #fff;
+            margin: 5px 0px 5px 0px;
+            border-radius: 8px 8px;
+            border: 1px solid #5f6368;
+        }
+
+        .basemapImg div {
             width: 100%;
+            height: 65px;
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+            position: relative;
+            border-radius: 8px;
+            border: 1px solid #ccc;
+            cursor: pointer;
         }
 
-        .sidepanel-content h5 {
-            margin-top: 0;
-            margin-bottom: 0;
-            line-height: 0.75;
+        .basemapImg .check {
+            position: absolute;
+        }
+
+        .leaflet-control-basemapsSwitcher:hover {
+            cursor: pointer;
+        }
+
+        #weather-sidebar-widget {
+            --theme-color: #333333;
+            --text-main: #222222;
+            --text-sub: #666666;
+            font-family: 'Kanit', sans-serif, Arial;
+            padding: 10px 5px 10px 5px;
+            background: transparent;
             width: 100%;
+            box-sizing: border-box;
         }
 
-        .sidepanel-content h6 {
-            margin-top: 0;
-            margin-bottom: 0;
-            line-height: 2;
+        #weather-sidebar-widget-item {
+            font-family: 'Kanit', sans-serif, Arial;
+            background: transparent;
             width: 100%;
+            box-sizing: border-box;
         }
 
-        .sidepanel-content p {
-            margin-top: 0;
-            margin-bottom: 0;
+        #weather-sidebar-widget * {
+            box-sizing: border-box;
+        }
+
+        .dashboard-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            padding: 0 10px;
+            margin-bottom: 10px;
+            border-bottom: none;
+        }
+
+        .datetime {
+            font-size: 12px;
+            font-weight: bold;
+            color: var(--text-sub);
+            text-align: right;
+        }
+
+        .current-main {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            padding: 0px 5px 0px 5px;
+        }
+
+        .current-temp-box:last-child {
+            justify-content: flex-end;
+        }
+
+        .current-temp-box:last-child .detail-item {
+            align-items: flex-end;
+        }
+
+        .details-grid .detail-item:nth-child(1) {
+            align-items: flex-start;
+        }
+
+        .details-grid .detail-item:nth-child(2) {
+            align-items: center;
+        }
+
+        .details-grid .detail-item:nth-child(3) {
+            align-items: flex-end;
+        }
+
+        .current-temp-box {
+            display: flex;
+            align-items: center;
+            flex: 1;
+        }
+
+        .current-temp-val {
+            font-size: 42px;
+            font-weight: bold;
+            color: var(--text-main);
             line-height: 1;
+            letter-spacing: -1px;
+        }
+
+        .current-temp-unit {
+            font-size: 16px;
+            vertical-align: super;
+        }
+
+        .current-condition-text {
+            font-size: 12px;
+            color: var(--text-sub);
+            margin-left: 0px;
+            font-weight: bold;
+        }
+
+        .details-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 5px;
+            margin-bottom: 15px;
+            background: transparent;
+            padding: 0px 5px 0px 5px;
+            border: none;
             width: 100%;
         }
 
-        .sidepanel-content span {
-            margin-top: 0;
-            margin-bottom: 0;
-            line-height: 0.75;
+        .detail-item-left {
+            display: flex;
+            flex-direction: column;
+            align-items: start;
+            text-align: start;
+        }
+
+        .detail-item-rigth {
+            display: flex;
+            flex-direction: column;
+            align-items: end;
+            text-align: end;
+        }
+
+        .detail-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+        }
+
+        .detail-label {
+            font-size: 11px;
+            color: var(--text-sub);
+            margin-bottom: 4px;
+        }
+
+        .detail-value {
+            font-size: 13px;
+            font-weight: bold;
+            color: var(--text-main);
+        }
+
+        .dir-arrow {
+            width: 12px;
+            height: 12px;
+            border: 1.5px solid #333;
+            margin-bottom: 0px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .hourly-forecast-container {
+            display: flex;
+            overflow-x: auto;
+            scroll-snap-type: x mandatory;
+            -webkit-overflow-scrolling: touch;
+            background: transparent;
+            border: none;
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+            cursor: grab;
             width: 100%;
         }
 
-        .sidepanel-content a {
+        .hourly-forecast-container:active {
+            cursor: grabbing;
+        }
+
+        .hourly-forecast-container::-webkit-scrollbar {
+            display: none;
+        }
+
+        .forecast-card {
+            flex: 0 0 20%;
+            min-width: 20%;
+            padding: 4px;
+            scroll-snap-align: start;
+            box-sizing: border-box;
+            text-align: center;
+            border-right: none;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            user-select: none;
+        }
+
+        .flex-center {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+        }
+
+        .f-icon {
+            width: 28px;
+            height: 28px;
+            margin-bottom: 5px;
+            pointer-events: none;
+        }
+
+        .f-icon-sm {
+            width: 32px;
+            height: 32px;
+            margin-bottom: 0px;
+            pointer-events: none;
+        }
+
+        .f-time {
+            font-size: 15px;
+            font-weight: bold;
+            color: var(--text-main);
+            margin-bottom: 5px;
+            margin-top: 5px;
+        }
+
+        .f-temp {
+            font-size: 15px;
+            font-weight: bold;
+            color: var(--text-main);
+            margin-bottom: 5px;
+            margin-top: 5px;
+        }
+
+        .f-heading {
+            font-size: 25px;
+            font-weight: bold;
+            color: var(--text-main);
+            margin-top: 0px;
+            margin-left: 0px;
+        }
+
+        .f-temp-sm {
+            font-size: 20px;
+            font-weight: bold;
+            color: var(--text-main);
+            margin-top: 0px;
+            margin-left: 0px;
+        }
+
+        .f-val {
+            font-size: 15px;
+            font-weight: bold;
+            color: var(--text-main);
+            margin-bottom: 5px;
+            margin-top: 5px;
+        }
+
+        .f-weather-icon {
+            width: 42px;
+            height: 42px;
+            pointer-events: none;
+        }
+
+        .f-wind-dir-box {
+            width: 24px;
+            height: 24px;
+            border: 1px solid var(--theme-color);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .f-unit {
+            font-size: 10px;
+            font-weight: normal;
+            margin-left: 1px;
+        }
+
+        @media (max-width: 300px) {
+            .detail-label {
+                font-size: 10px;
+            }
+
+            .detail-value {
+                font-size: 11px;
+            }
+
+            .current-temp-val {
+                font-size: 36px;
+            }
+
+            .forecast-card {
+                padding: 4px 2px;
+            }
+
+            .f-temp {
+                font-size: 13px;
+            }
+        }
+
+        .info-panel {
+            position: fixed;
+            top: 0;
+            right: -100%;
+            width: 100%;
+            height: 100%;
+            background: white;
+            font-size: 14px;
+            transition: right 0.3s ease;
+            z-index: 20010;
+            overflow-y: auto;
+        }
+
+        @media (min-width: 768px) {
+            .info-panel {
+                width: 400px;
+                right: -400px;
+            }
+        }
+
+        .info-panel.active {
+            right: 0;
+        }
+
+        .layer-panel {
+            position: fixed;
+            top: 0;
+            right: -100%;
+            width: 100%;
+            height: 100%;
+            background: white;
+            font-size: 14px;
+            transition: right 0.3s ease;
+            z-index: 20010;
+            overflow-y: auto;
+        }
+
+        @media (min-width: 768px) {
+            .layer-panel {
+                width: 400px;
+                right: -400px;
+            }
+        }
+
+        .layer-panel.active {
+            right: 0;
+        }
+
+        .search-panel {
+            position: fixed;
+            top: 0;
+            right: -100%;
+            width: 100%;
+            height: 100%;
+            background: white;
+            font-size: 14px;
+            transition: right 0.3s ease;
+            z-index: 20010;
+            overflow-y: auto;
+        }
+
+        @media (min-width: 768px) {
+            .search-panel {
+                width: 400px;
+                right: -400px;
+            }
+        }
+
+        .search-panel.active {
+            right: 0;
+        }
+
+        .create-panel {
+            position: fixed;
+            top: 0;
+            right: -100%;
+            width: 100%;
+            height: 100%;
+            background: white;
+            font-size: 14px;
+            transition: right 0.3s ease;
+            z-index: 20010;
+            overflow-y: auto;
+        }
+
+        @media (min-width: 768px) {
+            .create-panel {
+                width: 400px;
+                right: -400px;
+            }
+        }
+
+        .create-panel.active {
+            right: 0;
+        }
+
+        .overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            opacity: 0;
+            visibility: hidden;
+            transition: 0.3s;
+            z-index: 20000;
+        }
+
+        .overlay.active {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .header-info-panel {
+            padding: 20px;
+            display: flex;
+            justify-content: flex-end;
+        }
+
+        .info-panel-close-btn {
+            cursor: pointer;
+            border: none;
+            background: none;
+            font-size: 24px;
+        }
+
+        .header-layer-panel {
+            padding: 20px;
+            display: flex;
+            justify-content: flex-end;
+        }
+
+        .layer-panel-close-btn {
+            cursor: pointer;
+            border: none;
+            background: none;
+            font-size: 24px;
+        }
+
+        .header-search-panel {
+            padding: 20px;
+            display: flex;
+            justify-content: flex-end;
+        }
+
+        .search-panel-close-btn {
+            cursor: pointer;
+            border: none;
+            background: none;
+            font-size: 24px;
+        }
+
+        .header-create-panel {
+            padding: 20px;
+            display: flex;
+            justify-content: flex-end;
+        }
+
+        .create-panel-close-btn {
+            cursor: pointer;
+            border: none;
+            background: none;
+            font-size: 24px;
+        }
+
+        .content {
+            padding: 20px;
+        }
+
+        .quick-links {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .quick-links2 {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 6px;
+            margin-bottom: 6px;
+            height: 65px;
+        }
+
+        .quick-links3 {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 4px;
+            margin-bottom: 6px;
+        }
+
+        .quick-link {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
             text-decoration: none;
-            font-size: 1rem;
+            color: inherit;
+            padding: 10px;
+            border: 1px solid #5f6368;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+
+        .quick-link:hover {
+            background: #f5f5f5;
+        }
+
+        .quick-link span {
+            margin-top: 8px;
+        }
+
+        .info-panel-section {
+            margin-bottom: 24px;
+        }
+
+        .layer-panel-section {
+            margin-bottom: 24px;
+        }
+
+
+        .link-list {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .link-list a {
+            padding: 15px 0;
+            border-bottom: 1px solid #eee;
+            text-decoration: none;
+            color: inherit;
+        }
+
+        .link-list a:last-child {
+            border-bottom: none;
+        }
+
+        .link-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .link-item span {
+            display: inline-flex;
+            align-items: center;
+        }
+
+        .link-item .arrow_right_alt_icon {
+            margin-left: auto;
+            font-size: 25px;
+        }
+
+        .social-box {
+            border: 1px solid #eee;
+            border-radius: 8px;
+            padding: 16px;
+            background: #f8f9fa;
+        }
+
+        .social-links {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .social-links a {
+            display: inline-flex;
+            gap: 16px;
+        }
+
+        .social-icons {
+            display: flex;
+            gap: 24px;
+        }
+
+        .close_icon {
+            margin-right: 10px;
+            display: block;
+            width: 1em;
+            height: 1em;
+            background-color: currentColor;
+            --svg: url('data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" height="48" viewBox="0 -960 960 960" width="48"%3E%3Cpath d="m249-207-42-42 231-231-231-231 42-42 231 231 231-231 42 42-231 231 231 231-42 42-231-231-231 231Z"/%3E%3C/svg%3E');
+            -webkit-mask-image: var(--svg);
+            mask-image: var(--svg);
+            -webkit-mask-repeat: no-repeat;
+            mask-repeat: no-repeat;
+            -webkit-mask-size: 100% 100%;
+            mask-size: 100% 100%;
+        }
+
+        .leaflet-control-zoomhome .custom-open-btn {
+            background-color: #fff;
+            width: 26px;
+            height: 26px;
+            line-height: 26px;
+            display: block;
+            text-align: center;
+            text-decoration: none;
+            color: black;
+            border-top: 1px solid #ccc;
+        }
+
+        .leaflet-control-zoomhome .custom-open-btn:hover {
+            background-color: #f4f4f4;
+        }
+
+        .leaflet-control-zoomhome a:last-child {
+            border-bottom: none;
+            border-radius: 0 0 4px 4px;
+        }
+
+        .leaflet-control-zoomhome a.zoomhome-main {
+            border-radius: 0 !important;
+        }
+
+        .link-list .search-result-item {
+            display: flex;
+            align-items: center;
+            border-bottom: 1px solid #eee;
+            transition: background 0.2s;
+            cursor: pointer;
+            text-decoration: none;
+            color: #333;
+        }
+
+        .link-list .search-result-item:hover {
+            background-color: #f8f9fa;
+        }
+
+        .link-list .search-result-item span {
+            font-size: 14px;
+            font-family: Futura Lt BT, Prompt, sans-serif;
+            font-weight: bold;
+            margin-left: 8px;
+        }
+
+        .leaflet-control-search {
+            background: #ffffff !important;
+            border: 1px solid #ccc !important;
+            border-radius: 4px !important;
+            box-shadow: none !important;
+            padding: 0 !important;
+            margin: 0 0 5px 0 !important;
+            display: flex;
+            align-items: center;
+            width: 100% !important;
+            box-sizing: border-box !important;
+        }
+
+        .leaflet-control-search .search-input {
+            flex: 1 !important;
+            height: 40px !important;
+            font-family: 'Futura Lt BT', 'Prompt', sans-serif !important;
+            font-size: 14px !important;
+            font-weight: bold !important;
+            padding: 8px !important;
+            border: none !important;
+            outline: none !important;
+            background: transparent !important;
+        }
+
+        .leaflet-control-search .search-tooltip {
+            display: none !important;
+        }
+
+        .search-tooltip,
+        .hidden-tip {
+            display: none !important;
+        }
+
+        .read-more-btn {
+            display: block;
+            text-align: center;
+            font-size: 14px;
+            font-family: Futura Lt BT, Prompt, sans-serif;
+            color: #5f6368;
+            font-weight: bold;
+        }
+
+        .extra-result {
+            display: none;
+        }
+
+        .leaflet-control-container .leaflet-bar #polyline-measure-control {
+            display: none !important;
+        }
+
+        .leaflet-control-container .leaflet-bar:has(#polyline-measure-control) {
+            display: none !important;
+            border: none !important;
+        }
+
+        .leaflet-control-container .leaflet-bar .polyline-measure-clearControl {
+            display: none !important;
+        }
+
+        .leaflet-control-container .leaflet-bar:has(.polyline-measure-clearControl) {
+            display: none !important;
+            border: none !important;
+        }
+
+        .leaflet-control-boating-legend.leaflet-control.leaflet-bar {
+            background-color: transparent !important;
+            border: none !important;
+            box-shadow: none !important;
+        }
+
+        .leaflet-control-boating-legend {
+            text-shadow: -1px -1px 0 #FFFFFF,
+                1px -1px 0 #FFFFFF,
+                -1px 1px 0 #FFFFFF,
+                1px 1px 0 #FFFFFF,
+                0px -1px 0 #FFFFFF,
+                0px 1px 0 #FFFFFF,
+                -1px 0px 0 #FFFFFF,
+                1px 0px 0 #FFFFFF;
         }
     </style>
 </head>
 
 <body>
-    <div id="map">
-        <div id="mySidepanelRight" class="sidepanel" aria-label="side panel" aria-hidden="false">
-            <div class="sidepanel-inner-wrapper">
-                <nav class="sidepanel-tabs-wrapper" aria-label="sidepanel tab navigation">
-                    <ul class="sidepanel-tabs">
-                        <li class="sidepanel-tab">
-                            <a href="#" class="sidebar-tab-link" role="tab" data-tab-link="tab-1">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor"
-                                    class="bi bi-list" viewBox="0 0 16 16">
-                                    <path fill-rule="evenodd"
-                                        d="M2.5 12a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5zm0-4a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5zm0-4a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5z" />
+    <div id="map"></div>
+    <script>
+        function toggleInfoPanel() {
+            const infoPanel = document.querySelector('.info-panel');
+            const overlay = document.querySelector('.overlay');
+            const wasActive = infoPanel && infoPanel.classList.contains('active');
+            closeAllPanels();
+            if (infoPanel && !wasActive) {
+                infoPanel.classList.add('active');
+                if (overlay) overlay.classList.add('active');
+            }
+        }
+        function toggleLayerPanel() {
+            const layerPanel = document.querySelector('.layer-panel');
+            const overlay = document.querySelector('.overlay');
+            const wasActive = layerPanel && layerPanel.classList.contains('active');
+            closeAllPanels();
+            if (layerPanel && !wasActive) {
+                layerPanel.classList.add('active');
+                if (overlay) overlay.classList.add('active');
+            }
+        }
+        function toggleSearchPanel() {
+            const searchPanel = document.querySelector('.search-panel');
+            const overlay = document.querySelector('.overlay');
+            const wasActive = searchPanel && searchPanel.classList.contains('active');
+            closeAllPanels();
+            if (searchPanel && !wasActive) {
+                searchPanel.classList.add('active');
+                if (overlay) overlay.classList.add('active');
+            }
+        }
+        function toggleCreatePanel() {
+            const createPanel = document.querySelector('.create-panel');
+            const overlay = document.querySelector('.overlay');
+            const wasActive = createPanel && createPanel.classList.contains('active');
+            closeAllPanels();
+            if (createPanel && !wasActive) {
+                createPanel.classList.add('active');
+                if (overlay) overlay.classList.add('active');
+            }
+        }
+        function closeAllPanels() {
+            const infoPanel = document.querySelector('.info-panel');
+            const layerPanel = document.querySelector('.layer-panel');
+            const searchPanel = document.querySelector('.search-panel');
+            const createPanel = document.querySelector('.create-panel');
+            const overlay = document.querySelector('.overlay');
+            if (infoPanel) infoPanel.classList.remove('active');
+            if (layerPanel) layerPanel.classList.remove('active');
+            if (searchPanel) searchPanel.classList.remove('active');
+            if (createPanel) createPanel.classList.remove('active');
+            if (overlay) overlay.classList.remove('active');
+        }
+        const overlayElement = document.querySelector('.overlay');
+        if (overlayElement) {
+            overlayElement.addEventListener('click', closeAllPanels);
+        }
+    </script>
+    <div class="overlay"></div>
+    <div class="info-panel">
+        <div class="header-info-panel">
+            <button class="close_icon" style="font-size: 20px;" onclick="toggleInfoPanel()"></button>
+        </div>
+        <div class="content">
+            <input id="latitude" type="text" name="lat" value="13.34" placeholder="Latitude"
+                style="font-family: Futura Lt BT, Prompt, sans-serif; font-size: 14px; font-weight: bold; width: 95%; height: 25px; padding: 8px; margin-bottom: 5px; border: 1px solid #ccc; border-radius: 4px;">
+            <input id="longitude" type="text" name="lng" value="100.58" placeholder="Longitude"
+                style="font-family: Futura Lt BT, Prompt, sans-serif; font-size: 14px; font-weight: bold; width: 95%; height: 25px; padding: 8px; margin-bottom: 5px; border: 1px solid #ccc; border-radius: 4px;">
+            <div style="position: relative; width: 100%; margin-bottom: 5px;">
+                <input id="visible-weather-date" type="text" readonly
+                    style="box-sizing: border-box; text-align: right; font-family: Futura Lt BT, Prompt, sans-serif; font-size: 14px; font-weight: bold; width: 100%; height: 43px; padding: 8px 35px 8px 8px; border: none; background-color: transparent; border-radius: 4px; outline: none;">
+                <i class="fa fa-calendar"
+                    style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); color: #666; pointer-events: none; font-size: 16px;"></i>
+                <input id="weather-date" type="date" name="weather-datetime"
+                    style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; z-index: 2; -webkit-appearance: none;">
+            </div>
+            <script>
+                document.getElementById('weather-date').addEventListener('change', function () {
+                    if (!this.value) return;
+                    const [year, month, day] = this.value.split('-');
+                    document.getElementById('visible-weather-date').value = `${month}/${day}/${year}`;
+                });
+                document.addEventListener('DOMContentLoaded', function () {
+                    const nativeInput = document.getElementById('weather-date');
+                    const visibleInput = document.getElementById('visible-weather-date');
+                    const today = new Date();
+                    const localDate = new Date(today.getTime() - today.getTimezoneOffset() * 60000);
+                    const yyyyMmDd = localDate.toISOString().split('T')[0];
+                    const [year, month, day] = yyyyMmDd.split('-');
+                    nativeInput.value = yyyyMmDd;
+                    visibleInput.value = `${day}/${month}/${year}`;
+                });
+            </script>
+            <div id="weather-sidebar-widget" style="align-items: center;">
+                <div id="dashboard_container">
+                    <div class="current-main">
+                        <div class="current-temp-box">
+                            <div id="ui-main-icon" style="width: 50px; height: 50px;">
+                                <svg style="width:100%; height:100%; display:block;" viewBox="0 0 24 24">
+                                    <g transform="scale(0.75) translate(8, -4)">
+                                        <circle cx="12" cy="12" r="5" fill="#ffb843"></circle>
+                                        <g stroke="#ffb843" stroke-width="2" stroke-linecap="round">
+                                            <line x1="12" y1="1" x2="12" y2="3"></line>
+                                            <line x1="12" y1="21" x2="12" y2="23"></line>
+                                            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64">
+                                            </line>
+                                            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78">
+                                            </line>
+                                            <line x1="1" y1="12" x2="3" y2="12"></line>
+                                            <line x1="21" y1="12" x2="23" y2="12"></line>
+                                            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36">
+                                            </line>
+                                            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22">
+                                            </line>
+                                        </g>
+                                    </g>
+                                    <g transform="translate(0, 4)">
+                                        <path
+                                            d="M17.5 19C19.9853 19 22 16.9853 22 14.5C22 12.1325 20.1774 10.2038 17.8595 10.015C17.3888 6.61803 14.4172 4 10.8333 4C6.96734 4 3.83333 7.13401 3.83333 11C3.83333 11.0428 3.83371 11.0854 3.83445 11.1278C1.61114 11.6033 0 13.606 0 16C0 18.7614 2.23858 21 5 21H17.5Z"
+                                            fill="#b2dcfa"></path>
+                                    </g>
                                 </svg>
-                            </a>
-                        </li>
-                        <li class="sidepanel-tab">
-                            <a href="#" class="sidebar-tab-link" role="tab" data-tab-link="tab-2">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor"
-                                    class="bi bi-geo" viewBox="0 0 16 16">
-                                    <path fill-rule="evenodd"
-                                        d="M8 1a3 3 0 1 0 0 6 3 3 0 0 0 0-6zM4 4a4 4 0 1 1 4.5 3.969V13.5a.5.5 0 0 1-1 0V7.97A4 4 0 0 1 4 3.999zm2.493 8.574a.5.5 0 0 1-.411.575c-.712.118-1.28.295-1.655.493a1.319 1.319 0 0 0-.37.265.301.301 0 0 0-.057.09V14l.002.008a.147.147 0 0 0 .016.033.617.617 0 0 0 .145.15c.165.13.435.27.813.395.751.25 1.82.414 3.024.414s2.273-.163 3.024-.414c.378-.126.648-.265.813-.395a.619.619 0 0 0 .146-.15.148.148 0 0 0 .015-.033L12 14v-.004a.301.301 0 0 0-.057-.09 1.318 1.318 0 0 0-.37-.264c-.376-.198-.943-.375-1.655-.493a.5.5 0 1 1 .164-.986c.77.127 1.452.328 1.957.594C12.5 13 13 13.4 13 14c0 .426-.26.752-.544.977-.29.228-.68.413-1.116.558-.878.293-2.059.465-3.34.465-1.281 0-2.462-.172-3.34-.465-.436-.145-.826-.33-1.116-.558C3.26 14.752 3 14.426 3 14c0-.599.5-1 .961-1.243.505-.266 1.187-.467 1.957-.594a.5.5 0 0 1 .575.411z" />
-                                </svg>
-                            </a>
-                        </li>
-                        <li class="sidepanel-tab">
-                            <a href="#" class="sidebar-tab-link" role="tab" data-tab-link="tab-3">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor"
-                                    class="bi bi-geo-alt" viewBox="0 0 16 16">
-                                    <path
-                                        d="M12.166 8.94c-.524 1.062-1.234 2.12-1.96 3.07A31.493 31.493 0 0 1 8 14.58a31.481 31.481 0 0 1-2.206-2.57c-.726-.95-1.436-2.008-1.96-3.07C3.304 7.867 3 6.862 3 6a5 5 0 0 1 10 0c0 .862-.305 1.867-.834 2.94zM8 16s6-5.686 6-10A6 6 0 0 0 2 6c0 4.314 6 10 6 10z" />
-                                    <path d="M8 8a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm0 1a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" />
-                                </svg>
-                            </a>
-                        </li>
-                        <li class="sidepanel-tab">
-                            <a href="#" class="sidebar-tab-link" role="tab" data-tab-link="tab-4">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor"
-                                    class="bi bi-bookmarks" viewBox="0 0 16 16">
-                                    <path
-                                        d="M2 4a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v11.5a.5.5 0 0 1-.777.416L7 13.101l-4.223 2.815A.5.5 0 0 1 2 15.5V4zm2-1a1 1 0 0 0-1 1v10.566l3.723-2.482a.5.5 0 0 1 .554 0L11 14.566V4a1 1 0 0 0-1-1H4z" />
-                                    <path
-                                        d="M4.268 1H12a1 1 0 0 1 1 1v11.768l.223.148A.5.5 0 0 0 14 13.5V2a2 2 0 0 0-2-2H6a2 2 0 0 0-1.732 1z" />
-                                </svg>
-                            </a>
-                        </li>
-                        <li class="sidepanel-tab">
-                            <a href="#" class="sidebar-tab-link" role="tab" data-tab-link="tab-5">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor"
-                                    class="bi bi-gear" viewBox="0 0 16 16">
-                                    <path
-                                        d="M8 4.754a3.246 3.246 0 1 0 0 6.492 3.246 3.246 0 0 0 0-6.492zM5.754 8a2.246 2.246 0 1 1 4.492 0 2.246 2.246 0 0 1-4.492 0z" />
-                                    <path
-                                        d="M9.796 1.343c-.527-1.79-3.065-1.79-3.592 0l-.094.319a.873.873 0 0 1-1.255.52l-.292-.16c-1.64-.892-3.433.902-2.54 2.541l.159.292a.873.873 0 0 1-.52 1.255l-.319.094c-1.79.527-1.79 3.065 0 3.592l.319.094a.873.873 0 0 1 .52 1.255l-.16.292c-.892 1.64.901 3.434 2.541 2.54l.292-.159a.873.873 0 0 1 1.255.52l.094.319c.527 1.79 3.065 1.79 3.592 0l.094-.319a.873.873 0 0 1 1.255-.52l.292.16c1.64.893 3.434-.902 2.54-2.541l-.159-.292a.873.873 0 0 1 .52-1.255l.319-.094c1.79-.527 1.79-3.065 0-3.592l-.319-.094a.873.873 0 0 1-.52-1.255l.16-.292c.893-1.64-.902-3.433-2.541-2.54l-.292.159a.873.873 0 0 1-1.255-.52l-.094-.319zm-2.633.283c.246-.835 1.428-.835 1.674 0l.094.319a1.873 1.873 0 0 0 2.693 1.115l.291-.16c.764-.415 1.6.42 1.184 1.185l-.159.292a1.873 1.873 0 0 0 1.116 2.692l.318.094c.835.246.835 1.428 0 1.674l-.319.094a1.873 1.873 0 0 0-1.115 2.693l.16.291c.415.764-.42 1.6-1.185 1.184l-.291-.159a1.873 1.873 0 0 0-2.693 1.116l-.094.318c-.246.835-1.428.835-1.674 0l-.094-.319a1.873 1.873 0 0 0-2.692-1.115l-.292.16c-.764.415-1.6-.42-1.184-1.185l.159-.291A1.873 1.873 0 0 0 1.945 8.93l-.319-.094c-.835-.246-.835-1.428 0-1.674l.319-.094A1.873 1.873 0 0 0 3.06 4.377l-.16-.292c-.415-.764.42-1.6 1.185-1.184l.292.159a1.873 1.873 0 0 0 2.692-1.115l.094-.319z" />
-                                </svg>
-                            </a>
-                        </li>
-                    </ul>
-                </nav>
-                <div class="sidepanel-content-wrapper">
-                    <div class="sidepanel-content">
-                        <div class="sidepanel-tab-content" data-tab-content="tab-5">
-                            <h4>Tracking</h4>
-                            <p>Lorem Ipsum is simply dummy text of the printing and typesetting industry. </p>
-                            <a href="#">Read More</a>
-                            <hr>
-                            <input type="text" id="mission" name="mission" placeholder="ชื่อภารกิจที่ได้รับมอบหมาย"
-                                required
-                                style="width: 95%; padding: 8px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px;">
-                            <input type="text" id="distance" name="distance" placeholder="ระยะทาง(ไมล์ทะเล)" required
-                                style="width: 95%; padding: 8px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px;">
-                            <input type="text" id="speed" name="speed" placeholder="ความเร็วเดินทาง(ไมล์ทะเล/ชั่วโมง)"
-                                style="width: 95%; padding: 8px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px;"
-                                onkeyup="sum();" required>
-                            <input type="text" id="consumption" name="consumption"
-                                placeholder="อัตราการสิ้นเปลือง(ชั่วโมง/ลิตร)"
-                                style="width: 95%; padding: 8px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px;"
-                                onkeyup="sum();" required>
-                            <button onclick="savePolygons()"
-                                style="width:100%; margin-bottom:10px; padding: 8px; cursor: pointer; background-color: #4CAF50; color: white; border: none; border-radius: 4px;">
-                                บันทึกเส้นทาง
-                            </button>
-                        </div>
-                        <div class="sidepanel-tab-content" data-tab-content="tab-1">
-                            <h4>PolylineMeasure</h4>
-                            <p>Lorem Ipsum is simply dummy text of the printing and typesetting industry. </p>
-                            <a href="#">Read More</a>
-                            <hr>
-                            <div class="blog-category_block">
-                                <ul id="report-list-container"></ul>
+                            </div>
+                            <div style="display: flex; flex-direction: column; margin-left: 10px;">
+                                <div><span class="current-temp-val" id="ui-temp">--</span><span
+                                        class="current-temp-unit">°C</span></div>
+                                <span class="current-condition-text" id="ui-condition">--</span>
                             </div>
                         </div>
-                        <div class="sidepanel-tab-content" data-tab-content="tab-2">
-                            <h4>PolylineCoords</h4>
-                            <p>Lorem Ipsum is simply dummy text of the printing and typesetting industry. </p>
-                            <a href="#">Read More</a>
-                            <hr>
-                            <div class="blog-category_block">
-                                <ul id="report-routes-container"></ul>
+                        <div class="current-temp-box">
+                            <div style="display: flex; flex-direction: column; margin-left: 10px; margin-right: 0px;">
+                                <div class="detail-item">
+                                    <div class="detail-value flex-center">
+                                        <div class="f-icon">
+                                            <svg name="sunrise" class="TwcSunChart--sunIcon--0mWQU Icon--icon--ySD-o"
+                                                fill="none" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 21">
+                                                <title>Sunrise</title>
+                                                <path fill-rule="evenodd" clip-rule="evenodd"
+                                                    d="M6.875 6.125 10 3l3.125 3.125-.881.881-1.619-1.612v4.481h-1.25V5.394L7.756 7.006l-.881-.881Zm8.87 2.746-2.191 2.191.884.884 2.19-2.191-.883-.884ZM10 13a2.503 2.503 0 0 1 2.5 2.5h1.25a3.75 3.75 0 0 0-7.5 0H7.5A2.503 2.503 0 0 1 10 13Zm8.75 4.375H1.25v1.25h17.5v-1.25Zm-3.125-3.125h3.125v1.25h-3.125v-1.25ZM4.255 8.871l-.884.884 2.191 2.191.884-.884-2.191-2.19ZM1.25 14.25h3.125v1.25H1.25v-1.25Z"
+                                                    fill="currentColor"></path>
+                                            </svg>
+                                        </div>
+                                        <div class="f-temp-sm" id="ui-sunrise">--:--</div>
+                                    </div>
+                                </div>
+                                <div class="detail-item">
+                                    <div class="detail-value flex-center">
+                                        <div class="f-icon">
+                                            <svg name="sunset" class="TwcSunChart--sunIcon--0mWQU Icon--icon--ySD-o"
+                                                fill="none" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 21">
+                                                <title>Sunset</title>
+                                                <path fill-rule="evenodd" clip-rule="evenodd"
+                                                    d="m10.625 8.11 1.619-1.613.881.88L10 10.504 6.875 7.378l.881-.881 1.619 1.612V3.003h1.25v5.106Zm5.12.764-2.191 2.191.884.884 2.19-2.191-.883-.884ZM10 13.003a2.503 2.503 0 0 1 2.5 2.5h1.25a3.75 3.75 0 0 0-7.5 0H7.5a2.503 2.503 0 0 1 2.5-2.5Zm8.75 4.375H1.25v1.25h17.5v-1.25Zm-3.125-3.125h3.125v1.25h-3.125v-1.25ZM4.255 8.874l-.884.884 2.191 2.19.884-.883-2.191-2.191ZM1.25 14.253h3.125v1.25H1.25v-1.25Z"
+                                                    fill="currentColor"></path>
+                                            </svg>
+                                        </div>
+                                        <div class="f-temp-sm" id="ui-sunset">--:--</div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
-                        <div class="sidepanel-tab-content" data-tab-content="tab-3">
-                            <h4>YouTube Stream</h4>
-                            <p>Lorem Ipsum is simply dummy text of the printing and typesetting industry. </p>
-                            <a href="#">Read More</a>
-                            <hr>
-                            <input type="text" id="videoUrlInput" value="youtube.com/watch?v=https://www.youtube.com/live/TYZJR6pLZrE"
-                                style="width: 95%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
-                            <div id="player-container" style="margin-top: 10px; margin-bottom:5px;">
-                                <div id="player"></div>
+                    </div>
+                    <div class="details-grid">
+                        <div class="detail-item">
+                            <div class="detail-label">
+                                <span class="current-condition-text">ความเร็วลม</span>
                             </div>
-                            <button id="toggleBtn" onclick="toggleVideo()"
-                                style="width: 100%; padding: 12px; background-color: #28a745; color: white; border: none; border-radius: 4px; font-weight: bold; cursor: pointer;">
-                                WATCH STREAMING
-                            </button>
+                            <div class="detail-value flex-center">
+                                <div class="detail-item">
+                                    <div class="detail-value flex-center">
+                                        <div class="f-icon-sm">
+                                            <div class="dir-arrow" style="width:80%; height:80%;"><svg
+                                                    id="ui-wind-arrow"
+                                                    style="width:80%; height:60%; transform: rotate(116deg);"
+                                                    viewBox="0 0 24 24" fill="none" stroke="#222" stroke-width="3">
+                                                    <line x1="12" y1="22" x2="12" y2="2"></line>
+                                                    <polyline points="19 9 12 2 5 9"></polyline>
+                                                </svg>
+                                            </div>
+                                        </div>
+                                        <div class="f-temp-sm"><span id="ui-wind">--</span><span
+                                                style="font-weight: bold; color: var(--text-main); font-size:10px;">kt</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
-                        <script>
-                            var tag = document.createElement('script');
-                            tag.src = "https://www.youtube.com/iframe_api";
-                            var firstScriptTag = document.getElementsByTagName('script')[0];
-                            firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
-                            var player;
-                            var isPlaying = false;
-                            var currentVideoId = "";
-                            function extractVideoID(url) {
-                                var regExp = /^.*((youtu.be\/)|(v\/)|(\/u\/\w\/)|(embed\/)|(watch\?v=)|(live\/))([^#\&\?]*).*/;
-                                var match = url.match(regExp);
-                                return (match && match[8].length == 11) ? match[8] : false;
-                            }
-                            function toggleVideo() {
-                                var inputUrl = document.getElementById("videoUrlInput").value;
-                                var videoId = extractVideoID(inputUrl);
-                                var btn = document.getElementById("toggleBtn");
-                                if (!videoId) {
-                                    alert("Invalid YouTube URL");
-                                    return;
+                        <div class="detail-item">
+                            <div class="detail-label">
+                                <span class="current-condition-text">ความสูงคลื่น</span>
+                            </div>
+                            <div class="detail-value flex-center">
+                                <div class="detail-item">
+                                    <div class="detail-value flex-center">
+                                        <div class="f-icon-sm">
+                                            <svg class="MuiSvgIcon-root" focusable="false" viewBox="0 0 32 32"
+                                                aria-hidden="true"
+                                                style="width: var(--wave-icon); height: var(--wave-icon); fill: #222; flex-shrink: 0;">
+                                                <path
+                                                    d="M27.59 19.7c-1.14 0.35-1.92-0.67-1.81-1.72-0.63 1.15-1.94 1.18-2.39-0.12-0.24-0.7 0.090-1.41-0.12-2.080-0.283-0.581-0.823-0.999-1.468-1.108l-0.012-0.002c0.423-0.14 0.91-0.22 1.415-0.22 0.009 0 0.017 0 0.026 0h-0.001c2.77 0 3.98 2.93 4.36 5.25zM22.84 9.11c-5.24-0.86-10 1.31-13.54 5.16-2.577 3.134-4.681 6.78-6.128 10.742l-0.082 0.258h23.3c-0.126 0.007-0.274 0.011-0.422 0.011-2.412 0-4.584-1.026-6.103-2.665l-0.005-0.005c-0.894-1.076-1.437-2.472-1.437-3.994 0-0.427 0.043-0.843 0.124-1.246l-0.007 0.040c0.445-2.153 2.325-3.748 4.578-3.748 0.096 0 0.191 0.003 0.285 0.009l-0.013-0.001c2.3 0.070 3.78 1.94 4.5 4 0.138 0.363 0.269z">
+                                                </path>
+                                            </svg>
+                                        </div>
+                                        <div class="f-temp-sm"><span id="current-wave">--</span><span
+                                                style="font-weight: bold; color: var(--text-main); font-size:10px;">m</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="detail-item">
+                            <div class="detail-label">
+                                <span class="current-condition-text">ระดับน้ำทะเล</span>
+                            </div>
+                            <div class="detail-value flex-center">
+                                <div class="detail-item">
+                                    <div class="detail-value flex-center">
+                                        <div class="f-icon-sm">
+                                            <svg class="MuiSvgIcon-root" focusable="false" viewBox="0 0 32 32"
+                                                aria-hidden="true" style="color: white;">
+                                                <path
+                                                    d="M8.227 9.443h0.855v-3.379c0-0 0-0 0-0.001 0-0.104-0.083-0.189-0.187-0.193h-3.413c-0.105 0.003-0.189 0.088-0.189 0.193v14.503c0.001 0.105 0.085 0.189 0.189 0.191h3.413c0.104-0.002 0.187-0.086 0.187-0.19 0-0 0-0.001 0-0.001v0-0.887h-0.855c-0.176-0-0.319-0.143-0.319-0.319 0-0.001 0-0.002 0-0.002v0c0-0.001-0-0.003-0-0.004 0-0.176 0.143-0.32 0.319-0.32h0.856v-1.75h-0.855c-0.177-0.002-0.319-0.145-0.319-0.322 0-0.001 0-0.002 0-0.002v0c0-0.001 0-0.002 0-0.003 0-0.177 0.142-0.32 0.319-0.322h0.856v-1.748h-0.855c-0.177-0.002-0.319-0.145-0.319-0.322 0-0.001 0-0.002 0-0.002v0c0-0.001 0-0.001 0-0.002 0-0.177 0.142-0.32 0.319-0.322h0.856v-1.751h-0.855c-0.176-0.001-0.319-0.144-0.319-0.32 0-0.001 0-0.001 0-0.002v0c0-0.001 0-0.001 0-0.002 0-0.177 0.142-0.32 0.319-0.322h0.856v-1.75h-0.855c-0.177-0.002-0.319-0.146-0.319-0.323 0-0.001 0-0.002 0-0.002v0c0-0.001 0-0.001 0-0.002 0-0.176 0.143-0.319 0.319-0.32h0zM7.487 8.473c-0.578-0.007-1.043-0.477-1.043-1.056 0-0.004 0-0.007 0-0.011v0.001c-0-0.003-0-0.007-0-0.010 0-0.579 0.466-1.049 1.043-1.056h0.001c0.579 0.006 1.046 0.477 1.046 1.057 0 0.003-0 0.007-0 0.010v-0.001c0 0.003 0 0.006 0 0.010 0 0.58-0.467 1.051-1.045 1.057h-0.001z">
+                                                </path>
+                                                <path
+                                                    d="M28.328 23.795c-1.617-1.446-3.064-1.361-3.995-1.036-0.643 0.236-1.19 0.598-1.634 1.061l-0.001 0.001c-2.111 1.86-3.727 0.154-3.826 0.045-0.022-0.026-0.045-0.049-0.070-0.070l-0.001-0.001c-1.617-1.446-3.065-1.361-3.995-1.036-0.643 0.236-1.19 0.598-1.634 1.061l-0.001 0.001c-2.111 1.86-3.727 0.154-3.826 0.045-0.022-0.026-0.045-0.049-0.070-0.070l-0.001-0.001c-1.617-1.446-3.064-1.361-3.995-1.036-0.663 0.241-1.226 0.621-1.676 1.107l-0.003 0.003c-0.166 0.214-0.266 0.486-0.266 0.782 0 0.242 0.067 0.469 0.184 0.663l-0.003-0.006c0.271 0.429 0.75 0.48 1.067 0.115 0.017-0.018 1.662-1.858 3.825 0.047 0.445 0.464 0.992 0.827 1.605 1.053l0.030 0.010c0.931 0.325 2.379 0.41 3.995-1.036 0.026-0.023 0.049-0.047 0.071-0.073l0.001-0.001c0.017-0.018 1.662-1.858 3.825 0.047 0.445 0.464 0.992 0.827 1.605 1.053l0.030 0.010c0.342 0.124 0.738 0.197 1.149 0.198h0c0.812 0 1.793-0.293 2.846-1.233 0.025-0.022 0.048-0.045 0.070-0.070l0.001-0.001c0.1-0.11 1.73-1.831 3.856 0.071 0.35 0.312 0.819 0.183 1.050-0.286s0.136-1.103-0.212-1.415z">
+                                                </path>
+                                                <path
+                                                    d="M28.334 12.839c-1.59-1.445-3.014-1.361-3.93-1.035-0.634 0.236-1.172 0.598-1.607 1.059l-0.002 0.002c-2.076 1.86-3.667 0.155-3.764 0.046-0.022-0.026-0.044-0.050-0.069-0.071l-0.001-0.001c-1.59-1.445-3.015-1.361-3.93-1.035-0.634 0.236-1.172 0.598-1.607 1.059l-0.002 0.002c-0.664 0.595-1.278 0.825-1.809 0.858v2.046c0.772-0.032 1.685-0.341 2.662-1.229 0.025-0.023 0.048-0.047 0.070-0.073l0.001-0.001c0.017-0.019 1.635-1.858 3.763 0.047 0.437 0.463 0.975 0.826 1.579 1.053l0.029 0.010c0.336 0.124 0.725 0.196 1.13 0.198h0.001c0.799 0 1.764-0.293 2.799-1.233 0.025-0.022 0.047-0.046 0.068-0.071l0.001-0.001c0.098-0.109 1.702-1.829 3.793 0.072 0.343 0.312 0.805 0.183 1.032-0.286s0.134-1.104-0.209-1.416z">
+                                                </path>
+                                                <path
+                                                    d="M28.334 18.114c-1.591-1.445-3.014-1.362-3.93-1.035-0.634 0.236-1.172 0.598-1.607 1.059l-0.002 0.002c-2.076 1.86-3.667 0.155-3.764 0.046-0.022-0.026-0.045-0.050-0.069-0.071l-0.001-0.001c-1.59-1.445-3.015-1.361-3.93-1.035-0.634 0.236-1.172 0.598-1.607 1.059l-0.002 0.002c-0.664 0.595-1.278 0.825-1.809 0.858v2.046c0.772-0.032 1.685-0.341 2.662-1.229 0.025-0.023 0.048-0.047 0.070-0.073l0.001-0.001c0.017-0.019 1.635-1.858 3.763 0.047 0.437 0.463 0.975 0.826 1.579 1.053l0.029 0.010c0.336 0.124 0.725 0.196 1.13 0.198h0.001c0.799 0 1.764-0.293 2.799-1.233 0.024-0.022 0.047-0.046 0.068-0.070l0.001-0.001c0.098-0.11 1.702-1.831 3.793 0.071 0.343 0.312 0.805 0.183 1.032-0.286s0.134-1.104-0.209-1.416z">
+                                                </path>
+                                            </svg>
+                                        </div>
+                                        <div class="f-temp-sm"><span id="ui-tide-current">--</span><span
+                                                style="font-weight: bold; color: var(--text-main); font-size:10px;">m</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="hourly-forecast-container" id="ui-hourly-container">
+                        <div style="width: 100%; text-align: center; font-size: 12px; color: #666;">
+                            กำลังโหลดข้อมูลพยากรณ์ล่วงหน้า...</div>
+                    </div>
+                </div>
+            </div>
+            <script>
+                function getWeatherInfo(code) {
+                    let text = "ไม่ทราบสภาพอากาศ";
+                    let iconSVG = '';
+                    const sun = `<circle cx="12" cy="12" r="5" fill="#ffb843"></circle><g stroke="#ffb843" stroke-width="2" stroke-linecap="round"><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></g>`;
+                    const cloud = `<path d="M17.5 19C19.9853 19 22 16.9853 22 14.5C22 12.1325 20.1774 10.2038 17.8595 10.015C17.3888 6.61803 14.4172 4 10.8333 4C6.96734 4 3.83333 7.13401 3.83333 11C3.83333 11.0428 3.83371 11.0854 3.83445 11.1278C1.61114 11.6033 0 13.606 0 16C0 18.7614 2.23858 21 5 21H17.5Z" fill="#b2dcfa"></path>`;
+                    const rain = `<path d="M16 13L14 19M12 13L10 19M8 13L6 19" stroke="#b2dcfa" stroke-width="2" stroke-linecap="round"></path>`;
+                    if (code === 0) { text = "ท้องฟ้าแจ่มใส"; iconSVG = sun; }
+                    else if ([1, 2, 3].includes(code)) { text = "มีเมฆบางส่วน"; iconSVG = `<g transform="scale(0.75) translate(8, -4)">${sun}</g><g transform="translate(0, 4)">${cloud}</g>`; }
+                    else if ([45, 48].includes(code)) { text = "มีหมอก"; iconSVG = `<g transform="translate(0, 2)">${cloud}</g>`; }
+                    else if ([51, 53, 55, 61, 63, 65, 80, 81, 82].includes(code)) { text = "ฝนตก"; iconSVG = `<g transform="translate(0, -2)">${cloud}</g>${rain}`; }
+                    else if ([95, 96, 99].includes(code)) { text = "พายุฝนฟ้าคะนอง"; iconSVG = `<g transform="translate(0, -2)">${cloud}</g>${rain}`; }
+                    else { text = "มีเมฆ"; iconSVG = `<g transform="translate(0, 2)">${cloud}</g>`; }
+                    return { text: text, svg: `<svg style="width:100%; height:100%; display:block;" viewBox="0 0 24 24">${iconSVG}</svg>` };
+                }
+                function kmhToKnots(kmh) { return (kmh * 0.539957).toFixed(1); }
+                function formatTime(isoStr) {
+                    if (!isoStr) return '--:--';
+                    return new Date(isoStr).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+                }
+                async function loadData(lat, lng) {
+                    document.getElementById('ui-hourly-container').innerHTML = '<div style="padding: 20px; width: 100%; text-align: center; font-size: 12px; color: #666;">กำลังโหลดข้อมูลพยากรณ์ล่วงหน้า...</div>';
+                    const dateInput = document.getElementById('weather-date');
+                    let selectedDate = dateInput.value;
+                    if (!selectedDate) {
+                        const today = new Date();
+                        selectedDate = new Date(today.getTime() - today.getTimezoneOffset() * 60000).toISOString().split('T')[0];
+                        dateInput.value = selectedDate;
+                    }
+                    const omUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,weather_code,wind_speed_10m,wind_direction_10m&hourly=temperature_2m,weather_code,wind_speed_10m,wind_direction_10m&daily=sunrise,sunset&timezone=auto&start_date=${selectedDate}&end_date=${selectedDate}`;
+                    const marineUrl = `https://marine-api.open-meteo.com/v1/marine?latitude=${lat}&longitude=${lng}&current=wave_height,sea_level_height_msl&hourly=wave_height,sea_level_height_msl&timezone=auto&start_date=${selectedDate}&end_date=${selectedDate}`;
+                    try {
+                        const [omRes, marineRes] = await Promise.all([fetch(omUrl), fetch(marineUrl)]);
+                        const omData = await omRes.json();
+                        let marineData = null;
+                        if (marineRes.ok) marineData = await marineRes.json();
+                        renderData({ weather: omData, marine: marineData }, selectedDate);
+                    } catch (error) {
+                        console.error("API Error: ", error);
+                        document.getElementById('ui-hourly-container').innerHTML = '<div style="width: 100%; text-align: center; color: red;">ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์สภาพอากาศได้</div>';
+                    }
+                }
+                function renderData(data, selectedDate) {
+                    if (!data) return;
+                    const omData = data.weather;
+                    const sgMarine = data.marine;
+                    const displayDate = new Date(selectedDate);
+                    const timeOptions = { weekday: 'short', year: '2-digit', month: 'short', day: 'numeric' };
+                    if (omData.current) {
+                        const c = omData.current;
+                        const wInfo = getWeatherInfo(c.weather_code);
+                        document.getElementById('ui-main-icon').innerHTML = wInfo.svg;
+                        document.getElementById('ui-condition').innerText = wInfo.text;
+                        document.getElementById('ui-temp').innerText = Math.round(c.temperature_2m);
+                        document.getElementById('ui-wind-arrow').style.transform = `rotate(${c.wind_direction_10m}deg)`;
+                        document.getElementById('ui-wind').innerText = kmhToKnots(c.wind_speed_10m);
+                        if (omData.daily) {
+                            document.getElementById('ui-sunrise').innerText = formatTime(omData.daily.sunrise[0]);
+                            document.getElementById('ui-sunset').innerText = formatTime(omData.daily.sunset[0]);
+                        }
+                        let currentTideVal = '--';
+                        let currentWaveVal = '--';
+                        if (sgMarine && sgMarine.current) {
+                            if (sgMarine.current.sea_level_height_msl !== null) currentTideVal = sgMarine.current.sea_level_height_msl.toFixed(2);
+                            if (sgMarine.current.wave_height !== null) currentWaveVal = sgMarine.current.wave_height.toFixed(1);
+                        }
+                        document.getElementById('ui-tide-current').innerText = currentTideVal;
+                        const waveElement = document.getElementById('current-wave');
+                        if (waveElement) waveElement.innerText = currentWaveVal;
+                    }
+                    const container = document.getElementById('ui-hourly-container');
+                    let htmlCards = '';
+                    let cardCount = 0;
+                    if (omData.hourly && omData.hourly.time) {
+                        const today = new Date();
+                        const localTodayStr = new Date(today.getTime() - today.getTimezoneOffset() * 60000).toISOString().split('T')[0];
+                        let startIndex = 0;
+                        if (selectedDate === localTodayStr) {
+                            const currentHour = today.getHours();
+                            startIndex = omData.hourly.time.findIndex(t => new Date(t).getHours() === currentHour);
+                            if (startIndex === -1) startIndex = 0;
+                        }
+                        for (let i = startIndex; i < omData.hourly.time.length && cardCount < 24; i++) {
+                            if (!omData.hourly.time[i]) continue;
+                            const hTime = new Date(omData.hourly.time[i]);
+                            const timeStr = hTime.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+                            const hWeather = getWeatherInfo(omData.hourly.weather_code[i]);
+                            const hTemp = Math.round(omData.hourly.temperature_2m[i]);
+                            const hWindSpeed = kmhToKnots(omData.hourly.wind_speed_10m[i]);
+                            const hWindDir = omData.hourly.wind_direction_10m[i];
+                            let hTideVal = '--';
+                            let hWaveVal = '--';
+                            if (sgMarine && sgMarine.hourly && sgMarine.hourly.time) {
+                                const targetTimeISO = hTime.toISOString().slice(0, 16);
+                                let marineIndex = sgMarine.hourly.time.findIndex(t => t.startsWith(targetTimeISO));
+                                if (marineIndex === -1) marineIndex = i; // Fallback index alignment
+                                if (marineIndex !== -1 && sgMarine.hourly.sea_level_height_msl[marineIndex] !== undefined) {
+                                    const tideRaw = sgMarine.hourly.sea_level_height_msl[marineIndex];
+                                    const waveRaw = sgMarine.hourly.wave_height[marineIndex];
+                                    if (tideRaw !== null) hTideVal = tideRaw.toFixed(2);
+                                    if (waveRaw !== null) hWaveVal = waveRaw.toFixed(1);
                                 }
-                                if (!player) {
-                                    player = new YT.Player('player', {
-                                        height: '240',
-                                        width: '100%',
-                                        videoId: videoId,
-                                        playerVars: {
-                                            'playsinline': 1, // Crucial for iOS/Android WebView
-                                            'origin': window.location.origin // Helps with Error 153
-                                        },
-                                        events: {
-                                            'onReady': onPlayerReady,
-                                            'onStateChange': onPlayerStateChange
-                                        }
-                                    });
-                                    return; // Wait for onPlayerReady to start
-                                }
-                                if (isPlaying) {
-                                    player.stopVideo(); // "Stop" resets the stream/video
-                                    isPlaying = false;
-                                    btn.innerText = "WATCH STREAMING";
-                                    btn.style.backgroundColor = "#28a745"; // Red
-                                } else {
-                                    if (currentVideoId !== videoId) {
-                                        player.loadVideoById(videoId);
-                                        currentVideoId = videoId;
-                                    } else {
-                                        player.playVideo();
-                                    }
-                                    isPlaying = true;
-                                    btn.innerText = "STOP STREAMING";
-                                    btn.style.backgroundColor = "#dc3545"; // Dark Grey
-                                }
                             }
-                            function onPlayerReady(event) {
-                                currentVideoId = extractVideoID(document.getElementById("videoUrlInput").value);
-                                event.target.playVideo();
-                                isPlaying = true;
-                                var btn = document.getElementById("toggleBtn");
-                                btn.innerText = "STOP STREAMING";
-                                btn.style.backgroundColor = "#dc3545"; // Dark Grey
-                            }
-                            function onPlayerStateChange(event) {
-                                var btn = document.getElementById("toggleBtn");
-                                if (event.data == YT.PlayerState.PLAYING) {
-                                    isPlaying = true;
-                                    btn.innerText = "STOP STREAMING";
-                                    btn.style.backgroundColor = "#dc3545"; // Dark Grey
-                                } else if (event.data == YT.PlayerState.PAUSED || event.data == YT.PlayerState.ENDED) {
-                                    isPlaying = false;
-                                    btn.innerText = "WATCH STREAMING";
-                                    btn.style.backgroundColor = "#28a745"; // Red
-                                }
-                            }
-                        </script>
-                        <div class="sidepanel-tab-content" data-tab-content="tab-4">
-                            <h4>Username Password</h4>
-                            <p>Lorem Ipsum is simply dummy text of the printing and typesetting industry. </p>
-                            <a href="#">Read More</a>
-                            <hr>
-                            <div id="userInfo"></div>
-                            <script>
-                                document.addEventListener("DOMContentLoaded", () => {
-                                    const name = Android.getUserName();
-                                    const password = Android.getUserPassword();
-                                    document.getElementById("userInfo").innerHTML =
-                                        `<b>Username:</b> ${name}<br><b>Password:</b> ${password}`;
-                                });
-                            </script>
+                            htmlCards += `<div class="forecast-card">
+                                <div class="f-time">${timeStr}</div>
+                                <div class="f-weather-icon">${hWeather.svg}</div>
+                                <div class="f-temp">${hTemp}°c</div>
+                                <div class="f-wind-dir-box">
+                                <svg style="width:15px; height:15px; transform: rotate(${hWindDir}deg);" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                                <line x1="12" y1="22" x2="12" y2="2"></line>
+                                <polyline points="19 9 12 2 5 9"></polyline>
+                                </svg>
+                                </div>
+                                <div class="f-val">${hWindSpeed}<span class="f-unit">kt</span></div>
+                                <div class="f-icon-sm">
+                                <svg class="MuiSvgIcon-root" focusable="false" viewBox="0 0 32 32" aria-hidden="true" style="width: var(--wave-icon); height: var(--wave-icon); fill: #222; flex-shrink: 0;">
+                                <path d="M27.59 19.7c-1.14 0.35-1.92-0.67-1.81-1.72-0.63 1.15-1.94 1.18-2.39-0.12-0.24-0.7 0.090-1.41-0.12-2.080-0.283-0.581-0.823-0.999-1.468-1.108l-0.012-0.002c0.423-0.14 0.91-0.22 1.415-0.22 0.009 0 0.017 0 0.026 0h-0.001c2.77 0 3.98 2.93 4.36 5.25zM22.84 9.11c-5.24-0.86-10 1.31-13.54 5.16-2.577 3.134-4.681 6.78-6.128 10.742l-0.082 0.258h23.3c-0.126 0.007-0.274 0.011-0.422 0.011-2.412 0-4.584-1.026-6.103-2.665l-0.005-0.005c-0.894-1.076-1.437-2.472-1.437-3.994 0-0.427 0.043-0.843 0.124-1.246l-0.007 0.040c0.445-2.153 2.325-3.748 4.578-3.748 0.096 0 0.191 0.003 0.285 0.009l-0.013-0.001c2.3 0.070 3.78 1.94 4.5 4 0.138 0.363 0.269z"></path>
+                                </svg>
+                                </div>
+                                <div class="f-val">${hWaveVal}<span class="f-unit">m</span></div>
+                                <div class="f-icon-sm">
+                                <svg class="MuiSvgIcon-root" focusable="false" viewBox="0 0 32 32" aria-hidden="true" style="color: white;">
+                                <path d="M8.227 9.443h0.855v-3.379c0-0 0-0 0-0.001 0-0.104-0.083-0.189-0.187-0.193h-3.413c-0.105 0.003-0.189 0.088-0.189 0.193v14.503c0.001 0.105 0.085 0.189 0.189 0.191h3.413c0.104-0.002 0.187-0.086 0.187-0.19 0-0 0-0.001 0-0.001v0-0.887h-0.855c-0.176-0-0.319-0.143-0.319-0.319 0-0.001 0-0.002 0-0.002v0c0-0.001-0-0.003-0-0.004 0-0.176 0.143-0.32 0.319-0.32h0.856v-1.75h-0.855c-0.177-0.002-0.319-0.145-0.319-0.322 0-0.001 0-0.002 0-0.002v0c0-0.001 0-0.002 0-0.003 0-0.177 0.142-0.32 0.319-0.322h0.856v-1.748h-0.855c-0.177-0.002-0.319-0.145-0.319-0.322 0-0.001 0-0.002 0-0.002v0c0-0.001 0-0.001 0-0.002 0-0.177 0.142-0.32 0.319-0.322h0.856v-1.751h-0.855c-0.176-0.001-0.319-0.144-0.319-0.32 0-0.001 0-0.001 0-0.002v0c0-0.001 0-0.001 0-0.002 0-0.177 0.142-0.32 0.319-0.322h0.856v-1.75h-0.855c-0.177-0.002-0.319-0.146-0.319-0.323 0-0.001 0-0.002 0-0.002v0c0-0.001 0-0.001 0-0.002 0-0.176 0.143-0.319 0.319-0.32h0zM7.487 8.473c-0.578-0.007-1.043-0.477-1.043-1.056 0-0.004 0-0.007 0-0.011v0.001c-0-0.003-0-0.007-0-0.010 0-0.579 0.466-1.049 1.043-1.056h0.001c0.579 0.006 1.046 0.477 1.046 1.057 0 0.003-0 0.007-0 0.010v-0.001c0 0.003 0 0.006 0 0.010 0 0.58-0.467 1.051-1.045 1.057h-0.001z"></path>
+                                <path d="M28.328 23.795c-1.617-1.446-3.064-1.361-3.995-1.036-0.643 0.236-1.19 0.598-1.634 1.061l-0.001 0.001c-2.111 1.86-3.727 0.154-3.826 0.045-0.022-0.026-0.045-0.049-0.070-0.070l-0.001-0.001c-1.617-1.446-3.065-1.361-3.995-1.036-0.643 0.236-1.19 0.598-1.634 1.061l-0.001 0.001c-2.111 1.86-3.727 0.154-3.826 0.045-0.022-0.026-0.045-0.049-0.070-0.070l-0.001-0.001c-1.617-1.446-3.064-1.361-3.995-1.036-0.663 0.241-1.226 0.621-1.676 1.107l-0.003 0.003c-0.166 0.214-0.266 0.486-0.266 0.782 0 0.242 0.067 0.469 0.184 0.663l-0.003-0.006c0.271 0.429 0.75 0.48 1.067 0.115 0.017-0.018 1.662-1.858 3.825 0.047 0.445 0.464 0.992 0.827 1.605 1.053l0.030 0.010c0.931 0.325 2.379 0.41 3.995-1.036 0.026-0.023 0.049-0.047 0.071-0.073l0.001-0.001c0.017-0.018 1.662-1.858 3.825 0.047 0.445 0.464 0.992 0.827 1.605 1.053l0.030 0.010c0.342 0.124 0.738 0.197 1.149 0.198h0c0.812 0 1.793-0.293 2.846-1.233 0.025-0.022 0.048-0.045 0.070-0.070l0.001-0.001c0.1-0.11 1.73-1.831 3.856 0.071 0.35 0.312 0.819 0.183 1.050-0.286s0.136-1.103-0.212-1.415z"></path>
+                                <path d="M28.334 12.839c-1.59-1.445-3.014-1.361-3.93-1.035-0.634 0.236-1.172 0.598-1.607 1.059l-0.002 0.002c-2.076 1.86-3.667 0.155-3.764 0.046-0.022-0.026-0.044-0.050-0.069-0.071l-0.001-0.001c-1.59-1.445-3.015-1.361-3.93-1.035-0.634 0.236-1.172 0.598-1.607 1.059l-0.002 0.002c-0.664 0.595-1.278 0.825-1.809 0.858v2.046c0.772-0.032 1.685-0.341 2.662-1.229 0.025-0.023 0.048-0.047 0.070-0.073l0.001-0.001c0.017-0.019 1.635-1.858 3.763 0.047 0.437 0.463 0.975 0.826 1.579 1.053l0.029 0.010c0.336 0.124 0.725 0.196 1.13 0.198h0.001c0.799 0 1.764-0.293 2.799-1.233 0.025-0.022 0.047-0.046 0.068-0.071l0.001-0.001c0.098-0.109 1.702-1.829 3.793 0.072 0.343 0.312 0.805 0.183 1.032-0.286s0.134-1.104-0.209-1.416z"></path>
+                                <path d="M28.334 18.114c-1.591-1.445-3.014-1.362-3.93-1.035-0.634 0.236-1.172 0.598-1.607 1.059l-0.002 0.002c-2.076 1.86-3.667 0.155-3.764 0.046-0.022-0.026-0.045-0.050-0.069-0.071l-0.001-0.001c-1.59-1.445-3.015-1.361-3.93-1.035-0.634 0.236-1.172 0.598-1.607 1.059l-0.002 0.002c-0.664 0.595-1.278 0.825-1.809 0.858v2.046c0.772-0.032 1.685-0.341 2.662-1.229 0.025-0.023 0.048-0.047 0.070-0.073l0.001-0.001c0.017-0.019 1.635-1.858 3.763 0.047 0.437 0.463 0.975 0.826 1.579 1.053l0.029 0.010c0.336 0.124 0.725 0.196 1.13 0.198h0.001c0.799 0 1.764-0.293 2.799-1.233 0.024-0.022 0.047-0.046 0.068-0.070l0.001-0.001c0.098-0.11 1.702-1.831 3.793 0.071 0.343 0.312 0.805 0.183 1.032-0.286s0.134-1.104-0.209-1.416z"></path>
+                                </svg>
+                                </div>
+                                <div class="f-val">${hTideVal}<span class="f-unit">m</span></div>
+                                </div>`;
+                            cardCount++;
+                        }
+                    }
+                    container.innerHTML = htmlCards;
+                }
+                $(document).ready(function () {
+                    const dateInput = document.getElementById('weather-date');
+                    const today = new Date();
+                    const localDate = new Date(today.getTime() - today.getTimezoneOffset() * 60000).toISOString().split('T')[0];
+                    dateInput.value = localDate;
+                    const lat = document.getElementById('latitude').value;
+                    const lng = document.getElementById('longitude').value;
+                    if (lat && lng) loadData(lat, lng);
+                    dateInput.addEventListener('change', () => {
+                        const currentLat = document.getElementById('latitude').value;
+                        const currentLng = document.getElementById('longitude').value;
+                        if (currentLat && currentLng) loadData(currentLat, currentLng);
+                    });
+                    const slider = document.getElementById('ui-hourly-container');
+                    let isDown = false; let startX; let scrollLeft;
+                    slider.addEventListener('mousedown', (e) => {
+                        isDown = true; slider.style.cursor = 'grabbing';
+                        startX = e.pageX - slider.offsetLeft; scrollLeft = slider.scrollLeft;
+                    });
+                    slider.addEventListener('mouseleave', () => { isDown = false; slider.style.cursor = 'grab'; });
+                    slider.addEventListener('mouseup', () => { isDown = false; slider.style.cursor = 'grab'; });
+                    slider.addEventListener('mousemove', (e) => {
+                        if (!isDown) return;
+                        e.preventDefault();
+                        const x = e.pageX - slider.offsetLeft;
+                        const walk = (x - startX) * 1.5;
+                        slider.scrollLeft = scrollLeft - walk;
+                    });
+                });
+            </script>
+        </div>
+    </div>
+    <div class="overlay"></div>
+    <div class="layer-panel">
+        <div class="header-layer-panel">
+            <button class="close_icon" style="font-size: 20px;" onclick="toggleLayerPanel()"></button>
+        </div>
+        <div class="content">
+            <div class="social-links">
+                <div class="leaflet-control-basemapsSwitcher leaflet-control">
+                    <div class="basemapImg activeMap" data-layer="mapOne">
+                        <div style="background-image: url('./assets/images/img1.PNG');"></div>
+                    </div>
+
+                    <div class="basemapImg" data-layer="mapTwo">
+                        <div style="background-image: url('./assets/images/img2.PNG');"></div>
+                    </div>
+                    <div class="basemapImg" data-layer="mapThree">
+                        <div style="background-image: url('./assets/images/img3.PNG');"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="">
+                <div class="child-container">
+                    <div class="childOverlay">
+                        <div class="left">
+                            <input class="switch" type="checkbox" id="toggle-template1">
+                            <label class=""
+                                style="margin-left: 5px; font-family: Futura Lt BT, Prompt, sans-serif; font-size: 14px; font-weight: bold;">รูปแบบแผนที่</label>
+                        </div>
+                    </div>
+                </div>
+                <div class="child-container">
+                    <div class="childOverlay">
+                        <div class="left">
+                            <input class="switch" type="checkbox" id="toggle-template2" checked>
+                            <label class=""
+                                style="margin-left: 5px; font-family: Futura Lt BT, Prompt, sans-serif; font-size: 14px; font-weight: bold;">อาณาเขตทางทะเล</label>
+                        </div>
+                    </div>
+                </div>
+                <div class="child-container">
+                    <div class="childOverlay">
+                        <div class="left">
+                            <input class="switch" type="checkbox" id="toggle-template3">
+                            <label class=""
+                                style="margin-left: 5px; font-family: Futura Lt BT, Prompt, sans-serif; font-size: 14px; font-weight: bold;">แม่น้ำสำคัญ</label>
+                        </div>
+                    </div>
+                </div>
+                <div class="child-container">
+                    <div class="childOverlay">
+                        <div class="left">
+                            <input class="switch" type="checkbox" id="toggle-template4">
+                            <label class=""
+                                style="margin-left: 5px; font-family: Futura Lt BT, Prompt, sans-serif; font-size: 14px; font-weight: bold;">พื้นที่รับผิดชอบ</label>
+                        </div>
+                    </div>
+                </div>
+                <div class="child-container">
+                    <div class="childOverlay">
+                        <div class="left">
+                            <input class="switch" type="checkbox" id="toggle-SeaLevelContourGroup" checked>
+                            <label class=""
+                                style="margin-left: 5px; font-family: Futura Lt BT, Prompt, sans-serif; font-size: 14px; font-weight: bold;">ระดับน้ำทะเล</label>
+                        </div>
+                    </div>
+                </div>
+                <div class="child-container">
+                    <div class="childOverlay">
+                        <div class="left">
+                            <input class="switch" type="checkbox" id="toggle-seabedContourLayer" checked>
+                            <label class=""
+                                style="margin-left: 5px; font-family: Futura Lt BT, Prompt, sans-serif; font-size: 14px; font-weight: bold;">เส้นความลึกน้ำทะเล</label>
+                        </div>
+                    </div>
+                </div>
+                <div class="child-container">
+                    <div class="childOverlay">
+                        <div class="left">
+                            <input class="switch" type="checkbox" id="toggle-allCoastalCurrentsLayer" checked>
+                            <label class=""
+                                style="margin-left: 5px; font-family: Futura Lt BT, Prompt, sans-serif; font-size: 14px; font-weight: bold;">กระแสน้ำ</label>
+                        </div>
+                    </div>
+                </div>
+                <div class="child-container">
+                    <div class="childOverlay">
+                        <div class="left">
+                            <input class="switch" type="checkbox" id="toggle-provinceLayer">
+                            <label class=""
+                                style="margin-left: 5px; font-family: Futura Lt BT, Prompt, sans-serif; font-size: 14px; font-weight: bold;">ขอบเขตการปกครอง</label>
+                        </div>
+                    </div>
+                </div>
+                <div class="child-container">
+                    <div class="childOverlay">
+                        <div class="left">
+                            <input class="switch" type="checkbox" id="toggle-aisLayer" checked>
+                            <label class=""
+                                style="margin-left: 5px; font-family: Futura Lt BT, Prompt, sans-serif; font-size: 14px; font-weight: bold;">ภาพตำแหน่งเรือ</label>
                         </div>
                     </div>
                 </div>
             </div>
-            <div class="sidepanel-toggle-container">
-                <button class="sidepanel-toggle-button" type="button" aria-label="toggle side panel"></button>
+            <hr>
+            <div class="social-links">
+                <input type="hidden" id="streamUrl" value="rtmp://a.rtmp.youtube.com/live2/rv7y-2ezd-cgwy-3u2t-det0">
+                <button id="toggleBtnd" onclick="toggleStream()"
+                    style="width: 100%; padding: 12px; color: white; border: none; border-radius: 4px; font-weight: bold; cursor: pointer;">
+                    START STREAMING
+                </button>
+                <div id="streamStatus" style="display: none;">Status: Ready</div>
+                <script>
+                    let isStreaming = false;
+                    function toggleStream() {
+                        const btn = document.getElementById('toggleBtnd');
+                        const url = document.getElementById('streamUrl').value;
+                        const statusDiv = document.getElementById('streamStatus');
+                        if (!isStreaming) {
+                            if (url && window.Android) {
+                                statusDiv.innerText = "Status: Initializing...";
+                                window.Android.startStreaming(url);
+                                btn.innerText = "STOP STREAMING";
+                                btn.style.backgroundColor = "#dc3545";
+                                isStreaming = true;
+                            } else {
+                                alert("URL is empty or App Interface missing.");
+                            }
+                        } else {
+                            if (window.Android) window.Android.stopStreaming();
+                            btn.innerText = "START STREAMING";
+                            btn.style.backgroundColor = "#28a745";
+                            isStreaming = false;
+                        }
+                    }
+                    function updateStreamStatus(status) {
+                        document.getElementById('streamStatus').innerText = status;
+                        if (status.includes("Failed") || status.includes("Disconnected") || status.includes("Stopped") || status.includes("Error")) {
+                            const btn = document.getElementById('toggleBtnd');
+                            btn.innerText = "START STREAMING";
+                            btn.style.backgroundColor = "#28a745";
+                            isStreaming = false;
+                        } else if (status.includes("Live")) {
+                            const btn = document.getElementById('toggleBtnd');
+                            btn.innerText = "STOP STREAMING";
+                            btn.style.backgroundColor = "#dc3545";
+                            isStreaming = true;
+                        }
+                    }
+                </script>
             </div>
+        </div>
+    </div>
+    <div class="overlay"></div>
+    <div class="search-panel">
+        <div class="header-search-panel">
+            <button class="close_icon" style="font-size: 20px;" onclick="toggleSearchPanel()"></button>
+        </div>
+        <div class="content">
+            <div id="findbox"></div>
+            <div class="link-list"></div>
+            <hr>
+            <div class="blog-category_block">
+                <ul id="peer-list-container"></ul>
+            </div>
+            <div class="blog-category_block">
+                <ul id="report-routes-container"></ul>
+            </div>
+        </div>
+    </div>
+    <div class="overlay"></div>
+    <div class="create-panel">
+        <div class="header-create-panel">
+            <button class="close_icon" style="font-size: 20px;" onclick="toggleCreatePanel()"></button>
+        </div>
+        <div class="content">
+            <script>
+                document.addEventListener("DOMContentLoaded", () => {
+                    const name = Android.getUserName();
+                    document.getElementById("name").value = name;
+                });
+            </script>
+            <input type="text" id="mission" name="mission" placeholder="ภารกิจที่ได้รับมอบหมาย" required
+                style="font-family: Futura Lt BT, Prompt, sans-serif; font-size: 14px; font-weight: bold; width: 95%; height: 25px; padding: 8px; margin-bottom: 5px; border: 1px solid #ccc; border-radius: 4px;">
+            <input type="text" id="name" name="name" placeholder="ชื่อเรือ" required
+                style="font-family: Futura Lt BT, Prompt, sans-serif; font-size: 14px; font-weight: bold; width: 95%; height: 25px; padding: 8px; margin-bottom: 5px; border: 1px solid #ccc; border-radius: 4px;">
+            <input type="text" id="consumption" name="consumption" placeholder="อัตราการสิ้นเปลือง(ลิตร/ชั่วโมง)"
+                style="font-family: Futura Lt BT, Prompt, sans-serif; font-size: 14px; font-weight: bold; width: 95%; height: 25px; padding: 8px; margin-bottom: 5px; border: 1px solid #ccc; border-radius: 4px;"
+                required />
+            <input type="hidden" id="distance" name="distance">
+            <div class="messages"></div>
+            <div class="quick-links2" style="margin-top: 5px; margin-bottom: 15px;">
+                <a href="#" class="quick-link" id="custom-measure-btn" onclick="triggerMeasureTool(event)">
+                    <svg xmlns="http://www.w3.org/2000/svg" xml:space="preserve" viewBox="131 -131 512 512"
+                        height="25px" width="25px" fill="#5f6368">
+                        <path
+                            d="M504.1 85.3h-10.3c-4.3 0-7.7 4.3-8.5 9.4h-36.8l-15.4-64.1c9.4-11.1 15.4-24.8 15.4-40.2 0-29.1-20.5-53-47.9-59V-131h-28.2v62.4C346.8-61.8 328-37.8 328-10.5c0 16.2 6 30.8 17.1 41.9l-15.4 62.4h-41.9c-.9-5.1-4.3-9.4-8.5-9.4H269c-5.1 0-9.4 5.1-9.4 11.1v.9c0 6 4.3 16.2 9.4 16.2h10.3c3.4 0 6-4.3 7.7-9.4h39.3l-60.7 251.3 9.4 2.6-5.1 17.9c-.9 2.6.9 5.1 3.4 6h1.7c1.7 0 4.3-1.7 4.3-3.4l5.1-17.9 4.3 1.7 23.9-30.8 53.8-227.4h15.4V122c0 5.1 4.3 9.4 9.4 9.4s9.4-4.3 9.4-9.4v-18.8h11.1l53.8 227.4 23.9 30.8 4.3-1.7 5.1 17.9c.9 1.7 2.6 3.4 4.3 3.4h1.7c2.6-.9 4.3-3.4 3.4-6l-5.1-17.9 9.4-2.6L452 103.2h35c1.7 5.1 4.3 9.4 7.7 9.4H505c5.1 0 9.4-9.4 9.4-16.2v-.9c-1.8-6-5.2-10.2-10.3-10.2m-104.3 9.4V75.9c0-5.1-4.3-9.4-9.4-9.4s-9.4 4.3-9.4 9.4v18.8h-13.7l21.4-88.9 20.5 88h-9.4zm24-102.6-35 10.3-35-10.3-6.8 28.2c-6-8.5-10.3-18.8-10.3-30.8 0-28.2 23.1-51.3 51.3-51.3s51.3 23.1 51.3 51.3c0 10.3-3.4 19.7-8.5 28.2z" />
+                    </svg>
+                    <span
+                        style="font-family: Futura Lt BT, Prompt, sans-serif; font-size: 12px; font-weight: bold; color: #5f6368;">Create</span>
+                </a>
+                <a href="#" class="quick-link" id="custom-clear-btn" onclick="triggerClearTool(event)"">
+                    <svg xmlns=" http://www.w3.org/2000/svg" height="25px" width="25px" viewBox="0 0 28 28"
+                    fill="#5f6368">
+                    <path
+                        d="M7.004 23.087l7.08-7.081-7.07-7.071L8.929 7.02l7.067 7.069L23.084 7l1.912 1.913-7.089 7.093 7.075 7.077-1.912 1.913-7.074-7.073L8.917 25z" />
+                    </svg>
+                    <span
+                        style="font-family: Futura Lt BT, Prompt, sans-serif; font-size: 12px; font-weight: bold; color: #5f6368;">Clear</span>
+                </a>
+                <a href="#" class="quick-link" id="save-btn" onclick="validateAndSave(event)"
+                    style="pointer-events: none; opacity: 0.4; transition: opacity 0.3s;">
+                    <svg width="25px" height="25px" viewBox="0 0 32 32" version="1.1" xmlns="http://www.w3.org/2000/svg"
+                        xmlns:xlink="http://www.w3.org/1999/xlink"
+                        xmlns:sketch="http://www.bohemiancoding.com/sketch/ns">
+                        <defs></defs>
+                        <g id="Page-1" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd"
+                            sketch:type="MSPage">
+                            <g id="Icon-Set" sketch:type="MSLayerGroup" transform="translate(-152.000000, -515.000000)"
+                                fill="#000000">
+                                <path
+                                    d="M171,525 C171.552,525 172,524.553 172,524 L172,520 C172,519.447 171.552,519 171,519 C170.448,519 170,519.447 170,520 L170,524 C170,524.553 170.448,525 171,525 L171,525 Z M182,543 C182,544.104 181.104,545 180,545 L156,545 C154.896,545 154,544.104 154,543 L154,519 C154,517.896 154.896,517 156,517 L158,517 L158,527 C158,528.104 158.896,529 160,529 L176,529 C177.104,529 178,528.104 178,527 L178,517 L180,517 C181.104,517 182,517.896 182,519 L182,543 L182,543 Z M160,517 L176,517 L176,526 C176,526.553 175.552,527 175,527 L161,527 C160.448,527 160,526.553 160,526 L160,517 L160,517 Z M180,515 L156,515 C153.791,515 152,516.791 152,519 L152,543 C152,545.209 153.791,547 156,547 L180,547 C182.209,547 184,545.209 184,543 L184,519 C184,516.791 182.209,515 180,515 L180,515 Z"
+                                    id="save-floppy" sketch:type="MSShapeGroup">
+                                </path>
+                                <span
+                                    style="font-family: Futura Lt BT, Prompt, sans-serif; font-size: 12px; font-weight: bold; color: #5f6368;">Save</span>
+                            </g>
+                        </g>
+                    </svg>
+                </a>
+            </div>
+            <hr>
+            <div class="blog-category_block">
+                <ul id="report-list-container"></ul>
+            </div>
+            <script>
+                document.addEventListener('DOMContentLoaded', function () {
+                    const missionInput = document.getElementById('mission');
+                    const nameInput = document.getElementById('name');
+                    const consumptionInput = document.getElementById('consumption');
+                    const saveBtn = document.getElementById('save-btn');
+                    function checkRequiredFields() {
+                        if (missionInput.value.trim() !== '' &&
+                            nameInput.value.trim() !== '' &&
+                            consumptionInput.value.trim() !== '') {
+                            saveBtn.style.pointerEvents = 'auto';
+                            saveBtn.style.opacity = '1';
+                        } else {
+                            saveBtn.style.pointerEvents = 'none';
+                            saveBtn.style.opacity = '0.4';
+                        }
+                    }
+                    if (missionInput) missionInput.addEventListener('input', checkRequiredFields);
+                    if (nameInput) nameInput.addEventListener('input', checkRequiredFields);
+                    if (consumptionInput) consumptionInput.addEventListener('input', checkRequiredFields);
+                    checkRequiredFields();
+                });
+                function validateAndSave(event) {
+                    event.preventDefault();
+                    const mission = document.getElementById('mission').value.trim();
+                    const name = document.getElementById('name').value.trim();
+                    const consumption = document.getElementById('consumption').value.trim();
+                    if (!mission || !name || !consumption) {
+                        return;
+                    }
+                    if (typeof savePolygons === 'function') {
+                        savePolygons();
+                    }
+                }
+            </script>
         </div>
     </div>
     <script>
@@ -331,30 +1607,30 @@
         var ZoneInStyle = {
             color: '#000000',
             weight: 1,
-            fillColor: '#d3eff8',
+            fillColor: '#ffffff',
             opacity: 1,
-            fillOpacity: 1
+            fillOpacity: 0.3
         };
         var ZoneOutStyle = {
             color: '#000000',
             weight: 1,
             fillColor: '#cdf5eb',
             opacity: 1,
-            fillOpacity: 1
+            fillOpacity: 0.3
         };
         var ZoneFreeStyle = {
             color: '#000000',
             weight: 1,
-            fillColor: '#ffffff',
+            fillColor: '#d3eff8',
             opacity: 1,
-            fillOpacity: 1
+            fillOpacity: 0.3
         };
         var ZoneAreaStyle = {
             color: '#000000',
             weight: 1,
             fillColor: '#c1f2f4',
             opacity: 1,
-            fillOpacity: 1
+            fillOpacity: 0.3
         };
         var myLineStringStyle = {
             color: '#d3eff8',
@@ -373,6 +1649,92 @@
             fillColor: '#1a3661',
             fillOpacity: 1
         };
+        var seabedWMSUrl = "https://portal.marineportal.gistda.or.th/geoserver/wms";
+        var seabedLayerName = "geonode:BATHYMETRY1";
+        var seabedContourLayer = L.tileLayer.wms(seabedWMSUrl, {
+            layers: seabedLayerName,
+            format: 'image/png',
+            transparent: true,
+            version: '1.1.0'
+        });
+        var coastalRadarWMSUrl = "https://ocean.gistda.or.th/geoserver/coastalradar/wms";
+        var combinedRadarLayers = "recent_gulf,v_recent_gul5,v_recent_gul6,recent_gul3,recent_gul4,v_recent_gul7";
+        var allCoastalCurrentsLayer = L.tileLayer.wms(coastalRadarWMSUrl, {
+            layers: combinedRadarLayers,
+            format: 'image/png',
+            transparent: true,
+            version: '1.1.0',
+            opacity: 0.5,            // ADDED: Makes the WMS layer 40% transparent
+            cache_buster: Date.now() // Live data requires cache busting 
+        });
+        setInterval(function () {
+            if (map.hasLayer(allCoastalCurrentsLayer)) {
+                allCoastalCurrentsLayer.setParams({
+                    cache_buster: Date.now()
+                });
+            }
+        }, 3600000);
+        var CurrentsLegend = L.control({ position: 'bottomleft' });
+        CurrentsLegend.onAdd = function (map) {
+            var div = L.DomUtil.create('div', 'info legend');
+            div.style.backgroundColor = "transparent";
+            div.style.fontFamily = "Arial, sans-serif";
+            div.style.color = "#333";
+            div.style.fontWeight = "bold"; // Bold text makes the white border look better
+            div.style.textShadow = `-1px -1px 0 #FFFFFF,
+            1px -1px 0 #FFFFFF,
+            -1px  1px 0 #FFFFFF,
+            1px  1px 0 #FFFFFF,
+            0px -1px 0 #FFFFFF,
+            0px  1px 0 #FFFFFF,
+            -1px  0px 0 #FFFFFF,
+            1px  0px 0 #FFFFFF`;
+            div.innerHTML = `<div style="text-align: center; margin-bottom: 6px;">
+                <img src="https://dntservicetruck.co.th/assets/wave.png" alt="Depth Symbol" style="width: 28px; height: 28px; display: block; margin-left: 0;"></div>
+                <div style="display: flex; align-items: center;"><i style="background:#5853ff; width: 10px; height: 18px; display: inline-block; margin-right: 6px;"></i><span>&nbsp;&nbsp;5</span></div>
+                <div style="display: flex; align-items: center;"><i style="background:#576efe; width: 10px; height: 18px; display: inline-block; margin-right: 6px;"></i><span>10</span></div>
+                <div style="display: flex; align-items: center;"><i style="background:#579afe; width: 10px; height: 18px; display: inline-block; margin-right: 6px;"></i><span>15</span></div>
+                <div style="display: flex; align-items: center;"><i style="background:#57ccfe; width: 10px; height: 18px; display: inline-block; margin-right: 6px;"></i><span>20</span></div>
+                <div style="display: flex; align-items: center;"><i style="background:#57fdfe; width: 10px; height: 18px; display: inline-block; margin-right: 6px;"></i><span>25</span></div>
+                <div style="display: flex; align-items: center;"><i style="background:#55fde6; width: 10px; height: 18px; display: inline-block; margin-right: 6px;"></i><span>30</span></div>
+                <div style="display: flex; align-items: center;"><i style="background:#53fdcd; width: 10px; height: 18px; display: inline-block; margin-right: 6px;"></i><span>35</span></div>
+                <div style="display: flex; align-items: center;"><i style="background:#4cfd99; width: 10px; height: 18px; display: inline-block; margin-right: 6px;"></i><span>40</span></div>
+                <div style="display: flex; align-items: center;"><i style="background:#46fe43; width: 10px; height: 18px; display: inline-block; margin-right: 6px;"></i><span>45</span></div>
+                <div style="display: flex; align-items: center;"><i style="background:#93fe44; width: 10px; height: 18px; display: inline-block; margin-right: 6px;"></i><span>50</span></div>
+                <div style="display: flex; align-items: center;"><i style="background:#cbff49; width: 10px; height: 18px; display: inline-block; margin-right: 6px;"></i><span>55</span></div>
+                <div style="display: flex; align-items: center;"><i style="background:#e3ff47; width: 10px; height: 18px; display: inline-block; margin-right: 6px;"></i><span>60</span></div>
+                <div style="display: flex; align-items: center;"><i style="background:#faff4b; width: 10px; height: 18px; display: inline-block; margin-right: 6px;"></i><span>65</span></div>
+                <div style="display: flex; align-items: center;"><i style="background:#facd48; width: 10px; height: 18px; display: inline-block; margin-right: 6px;"></i><span>70</span></div>
+                <div style="display: flex; align-items: center;"><i style="background:#fb9d47; width: 10px; height: 18px; display: inline-block; margin-right: 6px;"></i><span>75</span></div>
+                <div style="display: flex; align-items: center;"><i style="background:#fb6a47; width: 10px; height: 18px; display: inline-block; margin-right: 6px;"></i><span>80</span></div>
+                <div style="display: flex; align-items: center;"><i style="background:#ff0000; width: 10px; height: 18px; display: inline-block; margin-right: 6px;"></i><span>85+</span></div>
+                <div style="display: flex; align-items: center; margin-top: 8px; margin-bottom: 27px;"><span>cm/s</span></div></div>`;
+            return div;
+        };
+        var provinceWMSUrl = "https://ocean.gistda.or.th/geoserver/oceanpub/wms";
+        var provinceLayerName = "l05_province_2559";
+        var provinceLayer = L.tileLayer.wms(provinceWMSUrl, {
+            layers: provinceLayerName,
+            format: 'image/png',
+            transparent: true,
+            version: '1.1.0'
+        });
+        var aisWMSUrl = "https://ocean.gistda.or.th/geoserver/ais/wms";
+        var aisLayerName = "view_vessel_latest_gportal";
+        var aisLayer = L.tileLayer.wms(aisWMSUrl, {
+            layers: aisLayerName,
+            format: 'image/png',
+            transparent: true,
+            version: '1.1.0',
+            cache_buster: Date.now() // Force fresh data on initial load
+        });
+        setInterval(function () {
+            if (map.hasLayer(aisLayer)) {
+                aisLayer.setParams({
+                    cache_buster: Date.now()
+                });
+            }
+        }, 60000);
         const ProvinceZone = L.geoJSON(provincezone, { style: ProvinceStyle });
         const Maritimeline2 = L.geoJSON(maritimeline, { style: MaritimeStyle2 });
         const MaritimeIn2 = L.geoJSON(markersLayerIn, { style: ZoneInStyle2 });
@@ -386,47 +1748,245 @@
         const myStringLine = L.geoJSON(myLineString, { style: myLineStringStyle });
         const StringLine = L.geoJSON(myLines, { style: myStyle });
         const MarineZone = L.geoJSON(marinezone, { style: MarineStyle });
-        const template1 = L.layerGroup([ProvinceZone, Maritimeline2, MaritimeIn2, MaritimeOut2, MaritimeFree2, MaritimeArea2]);
+        const SeaLevelContourGroup = L.layerGroup();
+        const depthConfig = [
+            { id: '0 m', name: '&nbsp;&nbsp;0', color: '#e1e6ec' },
+            { id: '5 m', name: '&nbsp;&nbsp;5', color: '#cae0f5' },
+            { id: '10 m', name: '10', color: '#c2dbef' },
+            { id: '15 m', name: '15', color: '#9cc8ed' },
+            { id: '20 m', name: '20', color: '#7bb3e2' },
+            { id: '25 m', name: '25', color: '#6dabdc' },
+            { id: '30 m', name: '30', color: '#5c9cda' },
+            { id: '35 m', name: '35', color: '#4d81cc' },
+            { id: '40 m', name: '40', color: '#4460b3' },
+            { id: '45 m', name: '45', color: '#2a3d8a' },
+            { id: '50 m', name: '50', color: '#202978' }
+        ];
+        function getDynamicContourStyle(zoomLevel) {
+            return {
+                weight: zoomLevel >= 12 ? 3 : (zoomLevel >= 9 ? 2 : 1),
+                opacity: zoomLevel >= 10 ? 0.9 : 0.4 // Translucent when zoomed out
+            };
+        }
+        if (typeof contour0m !== 'undefined') {
+            L.geoJSON(contour0m, {
+                style: function (feature) {
+                    var featureName = (feature.properties && feature.properties.name) ? feature.properties.name : '';
+                    var matchedColor = '#000000';
+                    for (var i = 0; i < depthConfig.length; i++) {
+                        if (depthConfig[i].id === featureName) {
+                            matchedColor = depthConfig[i].color;
+                            break;
+                        }
+                    }
+                    var dynamicStyle = getDynamicContourStyle(6);
+                    return {
+                        color: matchedColor,
+                        weight: dynamicStyle.weight,
+                        opacity: dynamicStyle.opacity
+                    };
+                },
+                interactive: false
+            }).addTo(SeaLevelContourGroup);
+        }
+        var DepthLegend = L.control({ position: 'bottomright' });
+        DepthLegend.onAdd = function (map) {
+            var container = L.DomUtil.create('div', 'depth-legend-container');
+            container.style.backgroundColor = 'transparent';
+            container.style.fontFamily = 'Arial, sans-serif';
+            container.style.color = '#08306b';
+            container.style.fontWeight = 'bold';
+            container.style.textShadow = `-1px -1px 0 #FFFFFF,
+            1px -1px 0 #FFFFFF, 
+            -1px  1px 0 #FFFFFF,
+            1px  1px 0 #FFFFFF,
+            0px -1px 0 #FFFFFF,
+            0px  1px 0 #FFFFFF,
+            -1px  0px 0 #FFFFFF,
+            1px  0px 0 #FFFFFF`;
+            var html = '<div style="text-align: center; margin-bottom: 6px; margin-right: 7px;">' +
+                '<img src="https://dntservicetruck.co.th/assets/contour.png" alt="Depth Symbol" style="width: 28px; height: 28px; display: block; margin: 0 auto;">' +
+                '</div>';
+            depthConfig.forEach(function (item) {
+                html += '<div style="display: flex; align-items: center;">' +
+                    '<i style="background:' + item.color + '; width: 10px; height: 18px; display: inline-block; margin-right: 6px;"></i>' +
+                    '<span>' + item.name + '</span>' +
+                    '</div>';
+            });
+            html += '<div style="display: flex; align-items: center;"><i style="background:transparent; width: 10px; height: 18px; display: inline-block; margin-right: 6px; margin-top: 8px; margin-bottom: 10px;"></i>' +
+                '<span>m.</span>' +
+                '</div>';
+            container.innerHTML = html;
+            return container;
+        };
+        const template1 = L.layerGroup([Maritimeline2, MaritimeIn2, MaritimeOut2, MaritimeFree2, MaritimeArea2]);
         const template2 = L.layerGroup([MaritimeIn, MaritimeOut, MaritimeFree, MaritimeArea]);
         const template3 = L.layerGroup([myStringLine, StringLine]);
         const template4 = L.layerGroup([MarineZone]);
-        const baseMap = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png')
-        const seaMarks = L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png')
-        const google = L.tileLayer('https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
-            maxZoom: 20,
+        window.template5 = L.layerGroup();
+        window.template6 = L.layerGroup();
+        const mapThree = L.tileLayer('https://www.google.cn/maps/vt?lyrs=s@189&gl=cn&x={x}&y={y}&z={z}', {
+            maxZoom: 22,
+            attribution: 'google'
+        });
+        const mapTwo = L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png', {
+            maxZoom: 21
+        })
+        const mapOne = L.tileLayer('https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
+            maxZoom: 22,
             subdomains: ['mt0', 'mt1', 'mt2', 'mt3']
         });
-        const map = L.map('map', {
-            center: [13.20, 100.30],
-            layers: [baseMap, seaMarks, template1],
+        map = L.map('map', {
+            center: [13.34, 100.58],
+            preferCanvas: true, // <--- ADD THIS: Drastically speeds up contour lines
             zoomControl: false,
-            rotate: true,
             zoom: 6
         });
-        const overlays = {
-            'รูปแบบแผนที่': template1,
-            'อาณาเขตทางทะเล': template2,
-            'แม่น้ำสำคัญ': template3,
-            'พื้นที่รับผิดชอบ': template4
-        };
         const baseLayers = {
-            'มุมมองถนน': baseMap,
-            'ดาวเทียม': google
+            mapOne: L.tileLayer('https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
+                maxZoom: 22,
+                subdomains: ['mt0', 'mt1', 'mt2', 'mt3']
+            }),
+            mapTwo: L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png', {
+                maxZoom: 21
+            }),
+            mapThree: L.tileLayer('https://www.google.cn/maps/vt?lyrs=s@189&gl=cn&x={x}&y={y}&z={z}', {
+                maxZoom: 22,
+                attribution: 'google'
+            })
         };
-        const layerControl = L.control.layers(baseLayers, overlays, {
-            position: 'topleft'
-        }).addTo(map);
-        const zoom = L.control.zoom({
-            position: 'topleft'
-        }).addTo(map);
-        const sidepanelRight = L.control.sidepanel('mySidepanelRight', {
-            panelPosition: 'right',
-            tabsPosition: 'top',
-            pushControls: true,
-            startTab: 'tab-1'
-        }).addTo(map);
+        let currentActiveLayer = baseLayers.mapOne; // Default is mapOne 
+        currentActiveLayer.addTo(map);
+        const basemapButtons = document.querySelectorAll('.leaflet-control-basemapsSwitcher .basemapImg');
+        basemapButtons.forEach(button => {
+            button.addEventListener('click', function () {
+                const layerKey = this.getAttribute('data-layer');
+                const selectedLayer = baseLayers[layerKey];
+                if (currentActiveLayer !== selectedLayer) {
+                    map.removeLayer(currentActiveLayer);
+                    selectedLayer.addTo(map);
+                    if (typeof selectedLayer.bringToBack === 'function') {
+                        selectedLayer.bringToBack();
+                    }
+                    currentActiveLayer = selectedLayer;
+                    basemapButtons.forEach(btn => {
+                        btn.classList.remove('activeMap');
+                    });
+                    this.classList.add('activeMap');
+                }
+            });
+        });
+        function toggleMapOverlay(layer, isVisible) {
+            if (isVisible) {
+                if (!map.hasLayer(layer)) {
+                    layer.addTo(map);
+                }
+            } else {
+                if (map.hasLayer(layer)) {
+                    map.removeLayer(layer);
+                }
+            }
+        }
+        $(document).ready(function () {
+            $('#toggle-template1').on('change', function () {
+                const isChecked = $(this).is(':checked');
+                toggleMapOverlay(template1, isChecked);
+            });
+            $('#toggle-template2').on('change', function () {
+                const isChecked = $(this).is(':checked');
+                toggleMapOverlay(template2, isChecked);
+            });
+            $('#toggle-template3').on('change', function () {
+                const isChecked = $(this).is(':checked');
+                toggleMapOverlay(template3, isChecked);
+            });
+            $('#toggle-template4').on('change', function () {
+                const isChecked = $(this).is(':checked');
+                toggleMapOverlay(template4, isChecked);
+            });
+            $('#toggle-SeaLevelContourGroup').on('change', function () {
+                const isChecked = $(this).is(':checked');
+                toggleMapOverlay(SeaLevelContourGroup, isChecked);
+            });
+            $('#toggle-seabedContourLayer').on('change', function () {
+                const isChecked = $(this).is(':checked');
+                toggleMapOverlay(seabedContourLayer, isChecked);
+            });
+            $('#toggle-allCoastalCurrentsLayer').on('change', function () {
+                const isChecked = $(this).is(':checked');
+                toggleMapOverlay(allCoastalCurrentsLayer, isChecked);
+            });
+            $('#toggle-provinceLayer').on('change', function () {
+                const isChecked = $(this).is(':checked');
+                toggleMapOverlay(provinceLayer, isChecked);
+            });
+            $('#toggle-aisLayer').on('change', function () {
+                const isChecked = $(this).is(':checked');
+                toggleMapOverlay(aisLayer, isChecked);
+            });
+        });
+        template2.addTo(map);
+        SeaLevelContourGroup.addTo(map);
+        seabedContourLayer.addTo(map);
+        aisLayer.addTo(map);
+        window.template5.addTo(map);
+        window.template6.addTo(map);
+        var zoomHome = L.Control.zoomHome({ position: 'topleft' });
+        zoomHome.addTo(map);
+        var zoomContainer = document.querySelector('.leaflet-control-zoomhome');
+        if (zoomContainer) {
+            const infoButton = L.DomUtil.create('a', 'leaflet-bar-part leaflet-bar-part-single custom-open-btn', zoomContainer);
+            infoButton.innerHTML = '<i class="fa fa-cloud" style="font-size: 14px;"></i>';
+            infoButton.href = '#';
+            infoButton.title = "Toggle Weather Info Panel";
+            infoButton.style.fontWeight = 'bold';
+            infoButton.style.display = 'flex';
+            infoButton.style.alignItems = 'center';
+            infoButton.style.justifyContent = 'center';
+            L.DomEvent.on(infoButton, 'click', function (e) {
+                L.DomEvent.stopPropagation(e);
+                L.DomEvent.preventDefault(e);
+                toggleInfoPanel(); // Your existing function 
+            });
+            const layerButton = L.DomUtil.create('a', 'leaflet-bar-part leaflet-bar-part-single custom-open-btn', zoomContainer);
+            layerButton.innerHTML = '<i class="fa fa-bars" style="font-size: 14px;"></i>';
+            layerButton.href = '#';
+            layerButton.title = "Toggle Layer Panel";
+            layerButton.style.fontWeight = 'bold';
+            layerButton.style.display = 'flex';
+            layerButton.style.alignItems = 'center';
+            layerButton.style.justifyContent = 'center';
+            L.DomEvent.on(layerButton, 'click', function (e) {
+                L.DomEvent.stopPropagation(e);
+                L.DomEvent.preventDefault(e);
+                toggleLayerPanel(); // Triggers the layer panel
+            });
+            const searchButton = L.DomUtil.create('a', 'leaflet-bar-part leaflet-bar-part-single custom-open-btn', zoomContainer);
+            searchButton.innerHTML = '<i class="fa fa-search" style="font-size: 14px;"></i>';
+            searchButton.href = '#';
+            searchButton.title = "Toggle Search Panel";
+            searchButton.style.display = 'flex';
+            searchButton.style.alignItems = 'center';
+            searchButton.style.justifyContent = 'center';
+            L.DomEvent.on(searchButton, 'click', function (e) {
+                L.DomEvent.stopPropagation(e);
+                L.DomEvent.preventDefault(e);
+                toggleSearchPanel(); // Triggers the search panel
+            });
+            const createButton = L.DomUtil.create('a', 'leaflet-bar-part leaflet-bar-part-single custom-open-btn', zoomContainer);
+            createButton.innerHTML = '<i class="fa fa-pencil" style="font-size: 14px;"></i>';
+            createButton.href = '#';
+            createButton.title = "Toggle Create Panel";
+            createButton.style.display = 'flex';
+            createButton.style.alignItems = 'center';
+            createButton.style.justifyContent = 'center';
+            L.DomEvent.on(createButton, 'click', function (e) {
+                L.DomEvent.stopPropagation(e);
+                L.DomEvent.preventDefault(e);
+                toggleCreatePanel(); // Triggers the create panel
+            });
+        }
         const polylineMeasure = L.control.polylineMeasure({
-            position: 'topleft',
             unit: 'nauticalmiles',
             clearMeasurementsOnStop: false,
             showClearControl: true,
@@ -436,6 +1996,270 @@
         polylineMeasure.addTo(map);
         const boatingControl = L.control.boating().addTo(map);
         window.boatingControl = boatingControl;
+        function triggerMeasureTool(event) {
+            event.preventDefault();
+            var originalBtn = document.getElementById('polyline-measure-control');
+            if (originalBtn) {
+                originalBtn.click();
+                var customBtn = document.getElementById('custom-measure-btn');
+                var svgIcon = customBtn.querySelector('svg');
+                var textSpan = customBtn.querySelector('span');
+                if (svgIcon.getAttribute('fill') === '#5f6368') {
+                    svgIcon.setAttribute('fill', '#4CAF50');
+                    textSpan.style.color = '#4CAF50';
+                } else {
+                    svgIcon.setAttribute('fill', '#5f6368');
+                    textSpan.style.color = '#5f6368';
+                }
+            }
+        }
+        function triggerClearTool(event) {
+            event.preventDefault();
+            var originalClearBtn = document.querySelector('.polyline-measure-clearControl');
+            if (originalClearBtn) {
+                originalClearBtn.click();
+                var customMeasureBtn = document.getElementById('custom-measure-btn');
+                if (customMeasureBtn) {
+                    var svgIcon = customMeasureBtn.querySelector('svg');
+                    var textSpan = customMeasureBtn.querySelector('span');
+                    if (svgIcon) svgIcon.setAttribute('fill', '#5f6368');
+                    if (textSpan) textSpan.style.color = '#5f6368';
+                }
+            } else {
+                if (typeof polylineMeasure !== 'undefined' && polylineMeasure.clearAll) {
+                    polylineMeasure.clearAll();
+                }
+            }
+            if (event) {
+                event.preventDefault();
+            }
+            const messagesContainer = document.querySelector('.messages');
+            if (messagesContainer) messagesContainer.innerHTML = '';
+        }
+        window.activeSearchTrack = {
+            name: null,
+            session: null,
+            line: L.polyline([], { color: '#3388ff', weight: 3 }),
+            circle: L.circleMarker([0, 0], { radius: 20, stroke: false, fillColor: '#3388ff', fillOpacity: 0.5 })
+        };
+        function updateSearchTrack(newLatLng) {
+            var track = window.activeSearchTrack;
+            if (!track || !track.session) return;
+            var ll = L.latLng(newLatLng.lat, newLatLng.lng);
+            var distMoved = track.session.lastLatLng.distanceTo(ll);
+            if (distMoved > 0) {
+                track.session.totalDistance += distMoved;
+                track.session.path.push(ll);
+                track.session.lastLatLng = ll;
+                track.line.setLatLngs(track.session.path);
+                track.circle.setLatLng(ll);
+                if (window.boatingControl && window.boatingControl.isFollowing()) {
+                    map.panTo(ll);
+                }
+                if (window.boatingControl && window.boatingControl.legend) {
+                    const legend = window.boatingControl.legend;
+                    if (legend.totalDist) legend.totalDist.innerHTML = (track.session.totalDistance / 1852).toFixed(2);
+                }
+            }
+        }
+        var controlSearch = new L.control.search({
+            container: 'findbox',
+            collapsed: false,
+            layer: window.template6,
+            propertyName: 'title',
+            initial: false,
+            zoom: 16,
+            marker: false,
+            textPlaceholder: 'ค้นหาชื่อเรือ...',
+            tooltipLimit: -1,
+            buildTip: function (text, val) {
+                var currentSearch = $('#findbox input').val();
+                if (!currentSearch || currentSearch.trim() === "") {
+                    return '<div style="display:none;"></div>';
+                }
+                var layer = val.layer || val;
+                var iconPath = layer.options.boatLabel || '../assets/default-icon.png';
+                var $list = $('.link-list');
+                let speedVal = "0.00";
+                if (layer.feature && layer.feature.properties) {
+                    speedVal = layer.feature.properties.speed || "0.00";
+                } else if (layer.options) {
+                    speedVal = layer.options.speed || "0.00";
+                }
+                let formattedSpeed = parseFloat(speedVal).toFixed(1);
+                var $item = $(`<a href="#" class="search-result-item" style="padding-right: 10px;">
+                    <img src="${iconPath}" style="width: 18px; height: 18px; object-fit: contain;">
+                    <span>${text}</span>
+                    <span style="margin-left: auto; font-size: 12px; color: #5f6368; font-weight: bold;">${formattedSpeed} kt</span>
+                    </a>`);
+                $item.on('click', function (e) {
+                    e.preventDefault();
+                    var latlng;
+                    if (layer.getLatLng) {
+                        latlng = layer.getLatLng();
+                    } else if (layer.getBounds) {
+                        latlng = layer.getBounds().getCenter();
+                    }
+                    if (latlng) {
+                        var shipName = text;
+                        if (window.activeSearchTrack.name && window.activeSearchTrack.name !== shipName) {
+                            if (window.activeSearchTrack.session && window.boatingControl) {
+                                window.boatingControl.saveRoute(window.activeSearchTrack.session);
+                            }
+                        }
+                        var ll = L.latLng(latlng.lat, latlng.lng);
+                        window.activeSearchTrack.name = shipName;
+                        window.activeSearchTrack.session = {
+                            boatName: shipName,
+                            startTime: new Date(),
+                            path: [ll],
+                            totalDistance: 0,
+                            lastLatLng: ll
+                        };
+                        if (!map.hasLayer(window.activeSearchTrack.line)) {
+                            window.activeSearchTrack.line.addTo(map);
+                        }
+                        if (!map.hasLayer(window.activeSearchTrack.circle)) {
+                            window.activeSearchTrack.circle.addTo(map);
+                        }
+                        window.activeSearchTrack.line.setLatLngs([ll]);
+                        window.activeSearchTrack.circle.setLatLng(ll);
+                        map.setView(ll, 18);
+                        if (layer.openPopup) layer.openPopup();
+                        if (window.boatingControl && window.boatingControl.icon) {
+                            window.boatingControl.icon.classList.remove('locating', 'requesting');
+                            window.boatingControl.icon.classList.add('following');
+                        }
+                        if (window.boatingControl && window.boatingControl.legend) {
+                            if (!map.hasLayer(window.boatingControl.legend)) {
+                                map.addControl(window.boatingControl.legend);
+                            }
+                            let descHtml = "No description available";
+                            let headingVal = 0;
+                            let speedVal = "0.00";
+                            if (layer.feature && layer.feature.properties) {
+                                let props = layer.feature.properties;
+                                descHtml = `MMSI: ${props.mmis || 'N/A'}<br>Callsign: ${props.callsign || 'N/A'}`;
+                                headingVal = props.dir || 0;
+                                speedVal = props.speed || "0.00";
+                            }
+                            else if (layer.options) {
+                                descHtml = `ประเภท (Type): ${layer.options.boatType || 'N/A'}`;
+                                headingVal = layer.options.heading || 0;
+                                speedVal = layer.options.speed || "0.00";
+                            }
+                            const legend = window.boatingControl.legend;
+                            if (legend.boatName) legend.boatName.innerHTML = shipName;
+                            if (legend.boatDesc) legend.boatDesc.innerHTML = descHtml;
+                            if (legend.heading) legend.heading.innerHTML = Math.round(headingVal);
+                            if (legend.knots) legend.knots.innerHTML = parseFloat(speedVal).toFixed(2);
+                            if (legend.totalDist) legend.totalDist.innerHTML = "0.00";
+                            if (window.boatingControl._stopwatchTimer) {
+                                clearInterval(window.boatingControl._stopwatchTimer);
+                            }
+                            if (window.activeSearchTrack.session && window.activeSearchTrack.session.startTime && legend.timeElapsed) {
+                                const startTime = window.activeSearchTrack.session.startTime;
+                                const timeElement = legend.timeElapsed;
+                                const tick = () => {
+                                    const diff = new Date() - startTime;
+                                    const h = Math.floor(diff / 3600000);
+                                    const m = Math.floor((diff % 3600000) / 60000);
+                                    const s = Math.floor((diff % 60000) / 1000);
+                                    timeElement.innerHTML = `${h}h ${m}m ${s}s`;
+                                };
+                                tick(); // Run once instantly
+                                window.boatingControl._stopwatchTimer = setInterval(tick, 1000);
+                            }
+                        }
+                        if (layer.openPopup) layer.openPopup();
+                        if (layer.openPopup) layer.openPopup();
+                    }
+                });
+                var itemCount = $list.find('.search-result-item').length;
+                if (itemCount < 10) {
+                    $list.append($item);
+                } else {
+                    $item.addClass('extra-result').hide();
+                    var $readMoreBtn = $list.find('.read-more-btn');
+                    if ($readMoreBtn.length > 0) {
+                        $item.insertBefore($readMoreBtn);
+                    } else {
+                        $list.append($item);
+                        var $newBtn = $('<a href="#" class="read-more-btn">ดูเพิ่มเติม</a>');
+                        $newBtn.on('click', function (e) {
+                            e.preventDefault();
+                            $list.find('.extra-result')
+                                .css('display', 'flex')
+                                .hide()
+                                .slideDown(200);
+
+                            $(this).remove();
+                        });
+                        $list.append($newBtn);
+                    }
+                }
+                return '<div style="display:none;"></div>';
+            }
+        });
+        function resetSidebar() {
+            $('.link-list').empty();
+        }
+        controlSearch.on('search:expanded search:collapsed', resetSidebar);
+        $('#findbox input').on('keyup input search', function () {
+            var value = $(this).val();
+            if (value.length === 0) {
+                resetSidebar();
+            } else {
+                resetSidebar();
+            }
+        });
+        map.addControl(controlSearch);
+        function clearSidebarResults() {
+            $('.link-list').empty();
+        }
+        controlSearch.on('search:cancel', function () {
+            clearSidebarResults();
+        });
+        $('#findbox input').on('keyup input search', function () {
+            var value = $(this).val();
+            if (!value || value.trim() === "") {
+                clearSidebarResults();
+            }
+        });
+        var customSvgIcon = L.divIcon({
+            className: 'custom-centermarker-icon',
+            html: `<svg fill="#000000" width="32px" height="32px" viewBox="0 0 256 256" id="Flat" xmlns="http://www.w3.org/2000/svg">
+                <path d="M220,128a4.0002,4.0002,0,0,1-4,4H132v84a4,4,0,0,1-8,0V132H40a4,4,0,0,1,0-8h84V40a4,4,0,0,1,8,0v84h84A4.0002,4.0002,0,0,1,220,128Z"/>
+            </svg>`,
+            iconSize: [32, 32],
+            iconAnchor: [16, 16] // Anchors the exact center to the coordinates
+        });
+        var centerMarker = L.centerMarker(map);
+        centerMarker.setIcon(customSvgIcon);
+        var initialCenter = map.getCenter();
+        document.getElementById('latitude').value = initialCenter.lat.toFixed(6);
+        document.getElementById('longitude').value = initialCenter.lng.toFixed(6);
+        centerMarker.on("newposition", function () {
+            var latlng = centerMarker.getLatLng();
+            document.getElementById('latitude').value = latlng.lat.toFixed(6);
+            document.getElementById('longitude').value = latlng.lng.toFixed(6);
+        });
+        var latInput = document.getElementById('latitude');
+        var lngInput = document.getElementById('longitude');
+        function updateMapFromInputs() {
+            var newLat = parseFloat(latInput.value);
+            var newLng = parseFloat(lngInput.value);
+            if (!isNaN(newLat) && !isNaN(newLng) && newLat >= -90 && newLat <= 90) {
+                map.panTo([newLat, newLng]);
+            } else {
+                alert("Please enter valid numeric coordinates.");
+                var safeCenter = map.getCenter();
+                latInput.value = safeCenter.lat.toFixed(6);
+                lngInput.value = safeCenter.lng.toFixed(6);
+            }
+        }
+        latInput.addEventListener('change', updateMapFromInputs);
+        lngInput.addEventListener('change', updateMapFromInputs);
         map.on('polylinemeasure:clear', function () {
             if (typeof boatingControl !== 'undefined' && boatingControl.viewedRouteLayer) {
                 if (map.hasLayer(boatingControl.viewedRouteLayer)) {
@@ -472,11 +2296,30 @@
         map.on('polylinemeasure:add', (e) => {
             var coords = polylineMeasure._currentLine.circleCoords;
             var lastInd = coords.length - 1;
+            var lastPoint = lastInd + 1;
+            var now = new Date();
+            now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+            var formattedDateTime = now.toISOString().slice(0, 16);
+            console.log('<input type="text" name="point' + lastPoint + '" value="ที่หมาย ' + lastPoint + '" style="font-family: Futura Lt BT, Prompt, sans-serif; font-size: 14px; font-weight: bold; width: 95%; height: 25px; padding: 8px; margin-bottom: 5px; border: 1px solid #ccc; border-radius: 4px;">');
+            console.log('<input type="text" class="custom-datetime" name="in-point' + lastPoint + '" value="' + formattedDateTime + '" style="font-family: Futura Lt BT, Prompt, sans-serif; font-size: 14px; font-weight: bold; width: 95%; height: 25px; padding: 8px; margin-bottom: 5px; border: 1px solid #ccc; border-radius: 4px;">');
+            console.log('<input type="text" class="custom-datetime" name="out-point' + lastPoint + '" value="' + formattedDateTime + '" style="font-family: Futura Lt BT, Prompt, sans-serif; font-size: 14px; font-weight: bold; width: 95%; height: 25px; padding: 8px; margin-bottom: 5px; border: 1px solid #ccc; border-radius: 4px;">');
         });
         map.on("polylinemeasure:change", (currentLine) => {
             var coords = polylineMeasure._currentLine.circleCoords;
             var lastInd = coords.length - 1;
         });
+        map.on("polylinemeasure:finish", (currentLine) => {
+            var polylinesArray = currentLine.circleCoords;
+            var polylinedistance = currentLine.distance;
+        });
+        var native = window;
+        var originalConsole = native.console;
+        native.console = {
+            log: function (message) {
+                $('div.messages').append(message);
+                originalConsole.log(message);
+            }
+        }
         var currentSessionLines = [];
         map.on("polylinemeasure:finish", (currentLine) => {
             var polylinedistance = currentLine.distance;
@@ -486,19 +2329,144 @@
             var coordsCopy = currentLine.circleCoords.map(p => ({ lat: p.lat, lng: p.lng }));
             currentSessionLines.push(coordsCopy);
         });
+        function calculateLineDistanceNM(linePoints) {
+            if (!linePoints || linePoints.length < 2) return 0;
+            let totalMeters = 0;
+            for (let i = 0; i < linePoints.length - 1; i++) {
+                let p1 = L.latLng(linePoints[i].lat || linePoints[i][0], linePoints[i].lng || linePoints[i][1]);
+                let p2 = L.latLng(linePoints[i + 1].lat || linePoints[i + 1][0], linePoints[i + 1].lng || linePoints[i + 1][1]);
+                totalMeters += p1.distanceTo(p2);
+            }
+            return totalMeters / 1852;
+        }
+        function extractMissionDataFromMessages() {
+            var missionData = [];
+            var container = document.querySelector('.messages') || document;
+            var i = 1;
+            while (true) {
+                var nameInput = container.querySelector('input[name="point' + i + '"]');
+                if (!nameInput) {
+                    break;
+                }
+                var inTimeInput = container.querySelector('input[name="in-point' + i + '"]');
+                var outTimeInput = container.querySelector('input[name="out-point' + i + '"]');
+                var arrival = (inTimeInput && inTimeInput.value) ? inTimeInput.value : null;
+                var departure = (outTimeInput && outTimeInput.value) ? outTimeInput.value : null;
+                missionData.push({
+                    name: nameInput.value || ('ที่หมาย ' + i),
+                    arrivalTime: arrival,
+                    departureTime: departure
+                });
+                i++;
+            }
+            return missionData;
+        }
+        function formatThaiDateTime(isoString) {
+            if (!isoString) return { date: '-', time: '-' };
+            let d = new Date(isoString);
+            if (isNaN(d.getTime())) return { date: '-', time: '-' };
+            const thaiMonths = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
+            let day = d.getDate();
+            let month = thaiMonths[d.getMonth()];
+            let year = d.getFullYear() + 543;
+            let hh = String(d.getHours()).padStart(2, '0');
+            let mm = String(d.getMinutes()).padStart(2, '0');
+            return {
+                date: `${day} ${month} ${year}`,
+                time: `${hh}:${mm} น.`,
+                rawTime: `${hh}:${mm}` // Used for the "HH:MM น. - HH:MM น." range
+            };
+        }
         function savePolygons() {
             var missionName = document.getElementById('mission').value;
+            var Name = document.getElementById('name').value;
             var dist = parseFloat(document.getElementById('distance').value) || 0;
-            var speed = parseFloat(document.getElementById('speed').value) || 0;
-            var consumption = parseFloat(document.getElementById('consumption').value) || 0;
-            var timeVal = "";
+            var cruisingConsumption = parseFloat(document.getElementById('consumption').value) || 0;
+            var idlingConsumption = cruisingConsumption * 0.05;
             var totalMinutesVal = 0;
             var fuelVal = 0;
-            if (speed > 0) {
-                var timeInHours = dist / speed;
-                totalMinutesVal = (timeInHours * 60).toFixed(2);
-                fuelVal = (consumption * timeInHours).toFixed(2);
-                var totalSeconds = timeInHours * 3600;
+            var timeVal = "";
+            var listHTML = "";
+            var itinerary = [];
+            var missionData = extractMissionDataFromMessages();
+            var overallStart = null;
+            var overallEnd = null;
+            let drawnLineIndex = 0;
+            let mapLines = typeof currentSessionLines !== 'undefined' ? currentSessionLines : [];
+            if (missionData && missionData.length > 0) {
+                for (let i = 0; i < missionData.length; i++) {
+                    if (missionData[i].departureTime || missionData[i].arrivalTime) {
+                        overallStart = missionData[i].departureTime || missionData[i].arrivalTime;
+                        break;
+                    }
+                }
+                for (let i = missionData.length - 1; i >= 0; i--) {
+                    if (missionData[i].arrivalTime || missionData[i].departureTime) {
+                        overallEnd = missionData[i].arrivalTime || missionData[i].departureTime;
+                        break;
+                    }
+                }
+                missionData.forEach(function (dest, index) {
+                    if (index > 0) {
+                        var prevDest = missionData[index - 1];
+                        if (prevDest.departureTime && dest.arrivalTime) {
+                            var depTime = new Date(prevDest.departureTime);
+                            var arrTime = new Date(dest.arrivalTime);
+                            var travelHours = (arrTime - depTime) / (1000 * 60 * 60);
+                            if (travelHours > 0) {
+                                totalMinutesVal += travelHours * 60;
+                                var travelFuel = travelHours * cruisingConsumption;
+                                fuelVal += travelFuel;
+                                var legDistance = 0;
+                                if (mapLines.length > 0) {
+                                    if (mapLines.length === 1 && mapLines[0].length > missionData.length - 1) {
+                                        let segment = [mapLines[0][index - 1], mapLines[0][index]];
+                                        legDistance = calculateLineDistanceNM(segment);
+                                    }
+                                    else if (mapLines[drawnLineIndex]) {
+                                        legDistance = calculateLineDistanceNM(mapLines[drawnLineIndex]);
+                                        drawnLineIndex++;
+                                    }
+                                }
+                                let tDep = formatThaiDateTime(prevDest.departureTime);
+                                let tArr = formatThaiDateTime(dest.arrivalTime);
+                                itinerary.push({
+                                    date: tDep.date,
+                                    timeRange: `${tDep.rawTime} น. - ${tArr.rawTime} น.`,
+                                    description: `เดินทางจาก ${prevDest.name} ไปยัง ${dest.name}`,
+                                    duration: travelHours.toFixed(2),
+                                    dist: legDistance.toFixed(2), // Now perfectly matches the map plugin!
+                                    fuel: travelFuel.toFixed(2)
+                                });
+                                listHTML += `<li><strong>${tDep.rawTime} น. - ${tArr.rawTime} น.:</strong> เดินทางจาก ${prevDest.name} ไปยัง ${dest.name} (${travelHours.toFixed(2)} ชม. | ระยะทาง ${legDistance.toFixed(2)} ไมล์ทะเล | ${travelFuel.toFixed(2)} ลิตร)</li>`;
+                            }
+                        }
+                    }
+                    if (dest.arrivalTime && dest.departureTime) {
+                        var arrTime2 = new Date(dest.arrivalTime);
+                        var depTime2 = new Date(dest.departureTime);
+                        var restHours = (depTime2 - arrTime2) / (1000 * 60 * 60);
+                        if (restHours > 0) {
+                            totalMinutesVal += restHours * 60;
+                            var restFuel = restHours * idlingConsumption;
+                            fuelVal += restFuel;
+                            let tArr = formatThaiDateTime(dest.arrivalTime);
+                            let tDep = formatThaiDateTime(dest.departureTime);
+                            itinerary.push({
+                                date: tDep.date,
+                                timeRange: `${tArr.rawTime} น. - ${tDep.rawTime} น.`,
+                                description: `เทียบท่าหรือจอดลอยลำ ${dest.name}`,
+                                duration: restHours.toFixed(2),
+                                dist: "0.00",
+                                fuel: restFuel.toFixed(2)
+                            });
+                            listHTML += `<li><strong>${tArr.rawTime} น. - ${tDep.rawTime} น.:</strong> เทียบท่าหรือจอดลอยลำ ${dest.name} (${restHours.toFixed(2)} ชม. | ${restFuel.toFixed(2)} ลิตร)</li>`;
+                        }
+                    }
+                });
+            }
+            if (totalMinutesVal > 0) {
+                var totalSeconds = totalMinutesVal * 60;
                 var days = Math.floor(totalSeconds / 86400);
                 var hours = Math.floor((totalSeconds % 86400) / 3600);
                 var minutes = Math.floor((totalSeconds % 3600) / 60);
@@ -507,26 +2475,45 @@
                 if (hours > 0 || days > 0) { timeVal += hours + "h "; }
                 timeVal += minutes + "m " + seconds + "s";
             }
+            let formattedStart = formatThaiDateTime(overallStart);
+            let formattedEnd = formatThaiDateTime(overallEnd);
             var newReport = {
                 id: Date.now(),
                 mission: missionName,
+                name: Name,
+                consumption: cruisingConsumption,
                 distance: dist,
-                times: timeVal,          // Using the variable we just calculated
-                totalMinutes: totalMinutesVal, // Using the variable we just calculated
-                fuel: fuelVal,           // Using the variable we just calculated
+                times: timeVal,
+                totalMinutes: totalMinutesVal.toFixed(2),
+                fuel: fuelVal.toFixed(2),
+                totalFuel: fuelVal.toFixed(2),
                 timestamp: new Date().toLocaleString(),
-                lines: typeof currentSessionLines !== 'undefined' ? currentSessionLines : []
+                startDate: formattedStart.date,
+                startTime: formattedStart.time,
+                endDate: formattedEnd.date,
+                endTime: formattedEnd.time,
+                itinerary: itinerary,
+                details: listHTML,
+                lines: mapLines // Saves the map lines drawn
             };
             var savedReports = JSON.parse(localStorage.getItem('savedPolygonReports') || '[]');
             savedReports.push(newReport);
             localStorage.setItem('savedPolygonReports', JSON.stringify(savedReports));
             currentSessionLines = [];
-            if (polylineMeasure && polylineMeasure.clearAll) { polylineMeasure.clearAll(); }
+            if (typeof polylineMeasure !== 'undefined' && polylineMeasure.clearAll) { polylineMeasure.clearAll(); }
             document.getElementById('mission').value = "";
+            document.getElementById('name').value = "";
             document.getElementById('distance').value = "";
-            document.getElementById('speed').value = "";
             document.getElementById('consumption').value = "";
-            displayReports();
+            if (typeof $ !== 'undefined') {
+                $('div.messages').empty();
+            } else {
+                var msgDiv = document.querySelector('div.messages');
+                if (msgDiv) msgDiv.innerHTML = '';
+            }
+            if (typeof displayReports === 'function') {
+                displayReports();
+            }
         }
         function displayReports() {
             var container = document.getElementById('report-list-container');
@@ -537,14 +2524,30 @@
                 (function (index) {
                     var report = savedReports[index];
                     var li = document.createElement('li');
-                    li.style.marginBottom = "15px";
+                    li.style.marginBottom = "5px";
                     var anchor = document.createElement('a');
                     anchor.href = '#';
                     anchor.className = 'report-link';
+                    anchor.style.display = 'block';
                     var missionTitle = document.createElement('h5');
                     missionTitle.className = 'text-white text-uppercase m-b-20';
-                    missionTitle.textContent = report.mission; // e.g. "ดูแลความปลอดภัย..."
+                    missionTitle.textContent = report.mission || 'Mission ' + (index + 1);
+                    missionTitle.style.whiteSpace = 'nowrap';
+                    missionTitle.style.overflow = 'hidden';
+                    missionTitle.style.textOverflow = 'ellipsis';
+                    missionTitle.style.width = '100%';
+                    missionTitle.style.marginBottom = '5px'; // tighter spacing
                     anchor.appendChild(missionTitle);
+                    var dateTimeH5 = document.createElement('h5');
+                    dateTimeH5.className = 'text-white text-uppercase m-b-20';
+                    var sDate = report.startDate || '';
+                    var sTime = report.startTime || '';
+                    var eDate = report.endDate || '';
+                    var eTime = report.endTime || '';
+                    dateTimeH5.textContent = `${sDate} ${sTime} - ${eDate} ${eTime}`;
+                    dateTimeH5.style.fontSize = '12px'; // Slightly smaller to differentiate from mission title
+                    dateTimeH5.style.color = '#ccc'; // Slightly dimmed color for the subtitle
+                    anchor.appendChild(dateTimeH5);
                     var table = document.createElement('table');
                     table.setAttribute('width', '100%');
                     var tbody = document.createElement('tbody');
@@ -557,62 +2560,83 @@
                         spanLabel.textContent = label;
                         var h1Value = document.createElement('h1');
                         h1Value.className = 'm-b-20 text-white counter';
-                        h1Value.textContent = value;
+                        h1Value.textContent = value || "0";
                         var h6Unit = document.createElement('h6');
                         h6Unit.className = 'text-white text-uppercase m-b-20';
-                        h6Unit.textContent = unit;
+                        h6Unit.textContent = unit || "";
                         td.appendChild(spanLabel);
                         td.appendChild(h1Value);
                         td.appendChild(h6Unit);
                         return td;
                     }
-                    var tdDistance = createInfoCell('ระยะทาง', report.distance, 'ไมล์ทะเล');
+                    var tdDistance = createInfoCell('ระยะทาง', report.distance || report.dist, 'ไมล์ทะเล');
                     var tdDuration = createInfoCell('เวลา(นาที)', report.totalMinutes, report.times);
-                    var tdFuel = createInfoCell('น้ำมันเชื้อเพลิง', report.fuel, 'ลิตร');
+                    var tdFuel = createInfoCell('น้ำมันเชื้อเพลิง', report.fuel || report.totalFuel, 'ลิตร');
                     tr.appendChild(tdDistance);
                     tr.appendChild(tdDuration);
                     tr.appendChild(tdFuel);
                     tbody.appendChild(tr);
                     table.appendChild(tbody);
                     anchor.appendChild(table);
+                    var vesselNameH5 = document.createElement('h5');
+                    vesselNameH5.className = 'text-white text-uppercase m-b-20';
+                    vesselNameH5.textContent = report.name || 'ไม่ระบุชื่อเรือ';
+                    vesselNameH5.style.marginTop = '10px'; // Space it away from the table
+                    anchor.appendChild(vesselNameH5);
+                    var actionContainer = document.createElement('div');
+                    actionContainer.style.display = 'flex';
+                    actionContainer.style.justifyContent = 'space-between';
+                    actionContainer.style.marginTop = '0px';
+                    var printBtn = document.createElement('button');
+                    printBtn.className = 'btn btn-primary';
+                    printBtn.style.fontSize = '14px';
+                    printBtn.innerHTML = '<i class="fa fa-print" style="font-size: 20px; margin-right: 5px;"></i> พิมพ์รายงาน';
+                    printBtn.onclick = function (e) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (typeof printNauticalChart === 'function') {
+                            printNauticalChart(report);
+                        }
+                    };
                     var delBtn = document.createElement('button');
-                    delBtn.className = 'delete-btn';
-                    delBtn.textContent = 'ลบข้อมูล';
-                    Object.assign(delBtn.style, {
-                        marginTop: '5px',
-                        padding: '5px 10px',
-                        backgroundColor: 'rgb(220, 53, 69)',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '3px',
-                        cursor: 'pointer',
-                        fontSize: '0.8rem'
-                    });
-                    anchor.appendChild(delBtn);
+                    delBtn.className = 'btn btn-danger';
+                    delBtn.style.fontSize = '14px';
+                    delBtn.innerHTML = '<i class="fa fa-trash" style="font-size: 20px; margin-right: 5px;"></i> ลบ';
                     anchor.onclick = function (e) {
-                        if (e.target === delBtn) return;
+                        if (e.target === delBtn || e.target.closest('.btn')) return;
                         e.preventDefault();
                         if (typeof loadReportOnMap === 'function') {
-                            loadReportOnMap(report.lines);
+                            loadReportOnMap(report.lines || []);
                         }
                     };
                     delBtn.onclick = function (e) {
                         e.preventDefault();
                         e.stopPropagation();
+                        if (typeof activeRouteGroup !== 'undefined') {
+                            activeRouteGroup.clearLayers();
+                        }
+                        if (typeof polylineMeasure !== 'undefined' && polylineMeasure.clearAll) {
+                            polylineMeasure.clearAll();
+                        } else if (typeof measureControl !== 'undefined' && measureControl.clearAll) {
+                            measureControl.clearAll();
+                        }
                         if (typeof deleteReport === 'function') {
                             deleteReport(index);
                         }
                     };
+                    actionContainer.appendChild(printBtn);
+                    actionContainer.appendChild(delBtn);
                     li.appendChild(anchor);
+                    li.appendChild(actionContainer);
                     container.appendChild(li);
                 })(i);
             }
         }
         function deleteReport(index) {
             var savedReports = JSON.parse(localStorage.getItem('savedPolygonReports') || '[]');
-            savedReports.splice(index, 1); // Remove item at index
+            savedReports.splice(index, 1);
             localStorage.setItem('savedPolygonReports', JSON.stringify(savedReports));
-            displayReports(); // Refresh UI
+            displayReports();
         }
         function loadReportOnMap(linesData) {
             if (polylineMeasure && polylineMeasure.clearAll) {
@@ -634,6 +2658,223 @@
         }
         window.addEventListener('load', function () {
             displayReports();
+        });
+        function printNauticalChart(reportData) {
+            const routeLines = reportData.lines || [];
+            const missionName = reportData.mission || 'ไม่ระบุ';
+            const Name = reportData.name || 'ไม่ระบุ';
+            const startDate = reportData.startDate || '-';
+            const startTime = reportData.startTime || '-';
+            const cruisingConsumption = reportData.consumption || '0';
+            const totalFuel = reportData.totalFuel || reportData.fuel || '0';
+            let finalDistance = parseFloat(reportData.distance || reportData.dist || '0');
+            const itinerary = reportData.itinerary || [];
+            let endDate = reportData.endDate || '-';
+            let endTime = reportData.endTime || '-';
+            if (itinerary.length > 0) {
+                const lastTask = itinerary[itinerary.length - 1];
+                if (lastTask.date) {
+                    endDate = lastTask.date;
+                }
+                if (lastTask.timeRange && lastTask.timeRange.includes('-')) {
+                    const timeParts = lastTask.timeRange.split('-');
+                    endTime = timeParts[1].trim();
+                }
+            }
+            let exactCalculatedDistance = 0;
+            let dynamicTablesHtml = '';
+            if (itinerary.length > 0) {
+                let currentDateGroup = '';
+                itinerary.forEach(leg => {
+                    exactCalculatedDistance += parseFloat(leg.dist || 0);
+                    let legDate = leg.date || startDate;
+                    if (legDate !== currentDateGroup) {
+                        if (currentDateGroup !== '') {
+                            dynamicTablesHtml += `</tbody></table>`;
+                        }
+                        currentDateGroup = legDate;
+                        dynamicTablesHtml += `<div class="muted" style="margin-top: 10px; margin-left: 10px; font-weight: bold; border: none; font-size: 14px;">
+                        วันที่ ${currentDateGroup}</div><hr style="margin-bottom: 5px;">
+                        <table>
+                        <thead>
+                        <tr>
+                        <th width="15%" style="text-align:center;">ตั้งแต่ เวลา - ถึง เวลา</th>
+                        <th width="40%" style="text-align:center;">รายละเอียด</th>
+                        <th width="15%" style="text-align:center;">ระยะเวลา(ชั่วโมง)</th>
+                        <th width="15%" style="text-align:center;">ระยะทาง(ไมล์ทะเล)</th>
+                        <th width="15%" style="text-align:center;">น้ำมันเชื้อเพลิง(ลิตร)</th>
+                        </tr>
+                        </thead>
+                        <tbody>`;
+                    }
+                    dynamicTablesHtml += `<tr>
+                    <td style="text-align:center;">${leg.timeRange || '-'}</td>
+                    <td>${leg.description || '-'}</td>
+                    <td style="text-align:center;">${leg.duration || '0'}</td>
+                    <td style="text-align:center;">${leg.dist || '0'}</td>
+                    <td style="text-align:center;">${leg.fuel || '0'}</td>
+                    </tr>`;
+                });
+                if (currentDateGroup !== '') {
+                    dynamicTablesHtml += `</tbody></table>`;
+                }
+                if (exactCalculatedDistance > 0) {
+                    finalDistance = exactCalculatedDistance;
+                }
+            } else {
+                dynamicTablesHtml = `<div class="muted" style="margin-top: 10px; margin-left: 10px; font-weight: bold; border: none; font-size: 14px;">
+                วันที่ ${startDate}</div><hr style="margin-bottom: 5px;">
+                <table>
+                <thead>
+                <tr>
+                <th width="15%" style="text-align:center;">ตั้งแต่ เวลา - ถึง เวลา</th>
+                <th width="40%" style="text-align:center;">รายละเอียด</th>
+                <th width="15%" style="text-align:center;">ระยะเวลา(ชั่วโมง)</th>
+                <th width="15%" style="text-align:center;">ระยะทาง(ไมล์ทะเล)</th>
+                <th width="15%" style="text-align:center;">น้ำมันเชื้อเพลิง(ลิตร)</th>
+                </tr>
+                </thead>
+                <tbody>
+                <tr><td colspan="5" style="text-align:center;">ไม่มีข้อมูลเส้นทาง</td></tr>
+                </tbody>
+                </table>`;
+            }
+            const printWindow = window.open('', '_blank', 'width=1024,height=800');
+            const htmlContent = `<!DOCTYPE html>
+            <html>
+            <head>
+            <meta charset="utf-8">
+            <title></title>
+            <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+            <link rel="stylesheet" href="https://ppete2.github.io/Leaflet.PolylineMeasure/Leaflet.PolylineMeasure.css" />
+            <style>
+            body { font-family: Futura Lt BT, Prompt, sans-serif; font-size: 14px; }
+            #map { height: 380px; margin: 10px 0; border: 1px solid #ddd; border-radius: 6px; }
+            .muted { border: 1px solid #ddd; font-size: 14px; }
+            table { width: 100%; font-size: 14px; }
+            @media print {
+            body { padding: 0; }
+            @page { size: A4 landscape; margin: 10mm; }
+            .leaflet-control-container { display: none !important; }
+            }
+            </style>
+            </head>
+            <body>
+            <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 5px; margin-left: 5px;">
+            <div style="font-size: 18px; font-weight: 600;">ภารกิจ ${missionName}</div>
+            </div><hr style="margin-bottom: 5px;">
+            <table class="header-table">
+            <tr>
+            <td width="60%" style="text-align:left;">ตั้งแต่ วันที่ ${startDate} เวลา ${startTime} ถึง วันที่ ${endDate} เวลา ${endTime}</td>
+            <td width="40%" style="text-align:right;">${Name}</td>
+            </tr>
+            <tr>
+            <td width="60%" style="text-align:left;">ประมาณการปริมาณน้ำมันเชื้อเพลิงที่ใช้การ จำนวน ${totalFuel} ลิตร | ระยะทางรวม ${finalDistance.toFixed(2)} ไมล์ทะเล</td>
+            <td width="40%" style="text-align:right;">อัตราการสิ้นเปลืองน้ำมันเชื้อเพลิง ${cruisingConsumption} ลิตร/ชั่วโมง</td>
+            </tr>
+            </table>
+            <div id="map"></div>
+            ${dynamicTablesHtml}
+            <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"><\/script>
+            <script src="https://ppete2.github.io/Leaflet.PolylineMeasure/Leaflet.PolylineMeasure.js"><\/script>
+            <script>
+            const map = L.map('map', { zoomControl: false }).setView([13.0, 100.0], 8); 
+            L.tileLayer('https://mt{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', { subdomains: '0123' }).addTo(map);
+            const lineCoordinates = ${JSON.stringify(routeLines)};
+            if (lineCoordinates && lineCoordinates.length > 0) {
+            const measureControl = L.control.polylineMeasure({
+            position: 'topleft',
+            unit: 'nauticalmiles',
+            showBearings: true,
+            showMeasurementsClearControl: false,
+            clearMeasurementsOnStop: false,
+            showUnitControl: false,
+            tempLine: {color: '#00539C', weight: 2}, 
+            fixedLine: {color: '#006E51', weight: 2}
+            }).addTo(map);
+            measureControl.seed(lineCoordinates);
+            const bounds = L.latLngBounds();
+            lineCoordinates.forEach(line => {
+            line.forEach(coord => {
+            bounds.extend(coord);
+            });
+            });
+            map.fitBounds(bounds, { padding: [40, 40] });
+            }
+            map.on('load', function() {
+            setTimeout(() => { window.print(); }, 1200);
+            });
+            // Fallback
+            setTimeout(() => { window.print(); }, 2000);
+            <\/script>
+            </body>
+            </html>`;
+            printWindow.document.open();
+            printWindow.document.write(htmlContent);
+            printWindow.document.close();
+        }
+        function handleMapZoom() {
+            var currentZoom = map.getZoom();
+            if (typeof SeaLevelContourGroup !== 'undefined' && map.hasLayer(SeaLevelContourGroup)) {
+                var newStyle = getDynamicContourStyle(currentZoom);
+                SeaLevelContourGroup.eachLayer(function (layer) {
+                    if (layer.setStyle) {
+                        layer.setStyle({
+                            weight: newStyle.weight,
+                            opacity: newStyle.opacity
+                        });
+                    }
+                });
+            }
+            var isZoomedOut = currentZoom <= 8;
+            var iconSize = currentZoom >= 15 ? 25 : (currentZoom >= 8 ? 14 : 11);
+            var mapContainer = map.getContainer();
+            mapContainer.style.setProperty('--boat-size', iconSize + 'px');
+            if (currentZoom >= 12) {
+                mapContainer.classList.add('show-map-tooltips');
+            } else {
+                mapContainer.classList.remove('show-map-tooltips');
+            }
+        }
+        map.on('zoomend', handleMapZoom);
+        handleMapZoom();
+        map.on('overlayadd', function (eventLayer) {
+            if (eventLayer.name === 'กระแสน้ำ') {
+                CurrentsLegend.addTo(map);
+            }
+            if (eventLayer.name === 'ระดับน้ำทะเล') {
+                DepthLegend.addTo(map);
+            }
+        });
+        map.on('overlayremove', function (eventLayer) {
+            if (eventLayer.name === 'กระแสน้ำ') {
+                map.removeControl(CurrentsLegend);
+            }
+            if (eventLayer.name === 'ระดับน้ำทะเล') {
+                map.removeControl(DepthLegend);
+            }
+        });
+        setTimeout(function () {
+            if (typeof SeaLevelContourGroup !== 'undefined' && map.hasLayer(SeaLevelContourGroup)) {
+                if (typeof DepthLegend !== 'undefined') {
+                    DepthLegend.addTo(map);
+                }
+            }
+            if (typeof allCoastalCurrentsLayer !== 'undefined' && map.hasLayer(allCoastalCurrentsLayer)) {
+                if (typeof CurrentsLegend !== 'undefined') {
+                    CurrentsLegend.addTo(map);
+                }
+            }
+        }, 500);
+        $(document).ready(function () {
+            const initialCenter = map.getCenter();
+            loadData(initialCenter.lat, initialCenter.lng);
+            map.on('moveend', function () {
+                const newCenter = map.getCenter();
+                loadData(newCenter.lat, newCenter.lng);
+            });
+            const slider = document.getElementById('ui-hourly-container');
+            let isDown = false; let startX; let scrollLeft;
         });
     </script>
 </body>

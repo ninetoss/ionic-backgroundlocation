@@ -18,9 +18,8 @@
     <link rel="stylesheet" href="dist/style.css" />
     <link rel="stylesheet" href="dist/leaflet.zoomhome.css">
     <script src="dist/leaflet.zoomhome.min.js"></script>
-    <script src="dist/leaflet-rotate-src.js"></script>
     <link rel="stylesheet" href="./L.Control.Boating.css" />
-    <script src="./L.Control.Boating.Service.js"></script>
+    <script src="./L.Control.Boating.Support.js"></script>
     <link rel="stylesheet" href="dist/Leaflet.PolylineMeasure.css">
     <script src="dist/Leaflet.PolylineMeasure.js"></script>
     <link href="style.css" rel="stylesheet">
@@ -30,11 +29,11 @@
     <script src="dist/MarineProvince.js"></script>
     <script src="dist/LineStrings.js"></script>
     <script src="dist/ContourStrings.js"></script>
+    <script src="dist/leaflet.centermarker.js"></script>
     <link href="src/L.multiControl.css" rel="stylesheet">
     <script src="src/L.multiControl.js"></script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
-    <script src="dist/leaflet.centermarker.js"></script>
     <style>
         html,
         body {
@@ -1465,7 +1464,7 @@
             <div class="link-list"></div>
             <hr>
             <div class="blog-category_block">
-                <ul id="peer-list-container"></ul>
+                <ul id="device-list-container"></ul>
             </div>
             <div class="blog-category_block">
                 <ul id="report-routes-container"></ul>
@@ -1806,7 +1805,7 @@
             -1px  0px 0 #FFFFFF,
             1px  0px 0 #FFFFFF`;
             var html = '<div style="text-align: center; margin-bottom: 6px; margin-right: 7px;">' +
-                '<img src="https://dntservicetruck.co.th/assets/contour.png" alt="Depth Symbol" style="width: 28px; height: 28px; display: block; margin: 0 auto;">' +
+                '<img src="../assets/contour.png" alt="Depth Symbol" style="width: 28px; height: 28px; display: block; margin: 0 auto;">' +
                 '</div>';
             depthConfig.forEach(function (item) {
                 html += '<div style="display: flex; align-items: center;">' +
@@ -1820,11 +1819,189 @@
             container.innerHTML = html;
             return container;
         };
+        const liveBoatCluster = L.markerClusterGroup({
+            animate: false,
+            animateAddingMarkers: false,
+            spiderfyOnMaxZoom: false,
+            zoomToBoundsOnClick: false, // Prevents the map from zooming in when a cluster is clicked
+            spiderfyOnMaxZoom: false,   // Prevents markers from fanning out when clicked at max zoom
+            showCoverageOnHover: false,  // Keeps the UI clean by removing hover polygons
+            disableClusteringAtZoom: 13,
+            maxClusterRadius: 30,
+            iconCreateFunction: function (cluster) {
+                return L.divIcon({
+                    html: `<svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" style="transform: rotate(45deg); width: 100%; height: 100%; filter: drop-shadow(0px 0px 3px rgba(255,255,255,0.8));">
+                        <path d="M 128 512 C 128 512 128 128 256 0 C 384 128 384 512 384 512 Z" fill="#48975b" stroke="white" stroke-width="40" stroke-linejoin="round"/>
+                    </svg>`,
+                    className: 'boat',
+                    iconAnchor: [11.5, 11.5],
+                    iconSize: [23, 23]
+                });
+            }
+        });
+        function fetchLiveBoats() {
+            fetch('https://dntservicetruck.co.th/fetch_boats.php')
+                .then(response => response.text())
+                .then(triggerResult => {
+                    var csvUrl = 'https://dntservicetruck.co.th/latest_tracking.csv?dummy=' + new Date().getTime();
+                    return fetch(csvUrl);
+                })
+                .then(response => {
+                    if (!response.ok) throw new Error("Network response was not ok");
+                    return response.text();
+                })
+                .then(csvText => {
+                    liveBoatCluster.clearLayers();
+                    var newMarkers = [];
+                    const rows = csvText.split('\n');
+                    if (rows.length < 2) return;
+                    const csvSplitRegex = /,(?=(?:(?:[^"]*"){2})*[^"]*$)/;
+                    const headers = rows[0].split(csvSplitRegex).map(h => h.trim().replace(/"/g, ''));
+                    const latIdx = headers.indexOf('รุ้ง');
+                    const lngIdx = headers.indexOf('แวง');
+                    const nameIdx = headers.indexOf('ชื่อเรือ'); // FIX 1: Syntax error removed
+                    const headingIdx = headers.indexOf('ทิศทาง');
+                    for (let i = 1; i < rows.length; i++) {
+                        if (!rows[i].trim()) continue;
+                        const columns = rows[i].split(csvSplitRegex);
+                        const lat = parseFloat(columns[latIdx]);
+                        const lng = parseFloat(columns[lngIdx]);
+                        const shipName = columns[nameIdx] ? columns[nameIdx].replace(/"/g, '') : 'Unknown Target';
+                        let heading = 45;
+                        if (columns[headingIdx]) {
+                            heading = parseFloat(columns[headingIdx].replace('°', ''));
+                            if (isNaN(heading)) heading = 45;
+                        }
+                        if (isNaN(lat) || isNaN(lng)) continue;
+                        const boatIcon = L.divIcon({
+                            iconAnchor: [11.5, 11.5],
+                            iconSize: [23, 23],
+                            className: 'boat',
+                            html: `<svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" style="transform: rotate(${heading}deg); width: 100%; height: 100%; filter: drop-shadow(0px 0px 3px rgba(255,255,255,0.8));">
+                                <path d="M 128 512 C 128 512 128 128 256 0 C 384 128 384 512 384 512 Z" fill="#48975b" stroke="white" stroke-width="40" stroke-linejoin="round"/>
+                            </svg>`
+                        });
+                        const typeIdx = headers.indexOf('ประเภท');
+                        const speedIdx = headers.indexOf('ความเร็ว'); // Assuming this exists; adjust if needed
+                        let boatType = (typeIdx > -1 && columns[typeIdx]) ? columns[typeIdx].replace(/"/g, '') : 'ไม่ระบุ';
+                        let speedVal = (speedIdx > -1 && columns[speedIdx]) ? columns[speedIdx].replace(/"/g, '') : '0.00';
+                        var marker = L.marker([lat, lng], {
+                            icon: boatIcon,
+                            title: shipName,
+                            boatColor: '#48975b',
+                            boatLabel: '../assets/green-icon.png',
+                            boatType: boatType,    // ADDED: Store type for legend
+                            heading: heading,      // ADDED: Store heading for legend
+                            speed: speedVal        // ADDED: Store speed for legend
+                        });
+                        marker.bindTooltip(shipName, {
+                            permanent: true,
+                            direction: 'top',
+                            className: 'transparent-tooltip',
+                            offset: [0, -10]
+                        });
+                        newMarkers.push(marker);
+                        if (window.activeSearchTrack && window.activeSearchTrack.name === shipName) {
+                            updateSearchTrack(L.latLng(lat, lng));
+                        }
+                    }
+                    liveBoatCluster.addLayers(newMarkers);
+                })
+                .catch(err => console.error("", err));
+        }
+        fetchLiveBoats();
+        setInterval(fetchLiveBoats, 60000);
+        const redBoatCluster = L.markerClusterGroup({
+            animate: false,
+            animateAddingMarkers: false,
+            spiderfyOnMaxZoom: false,
+            zoomToBoundsOnClick: false, // Prevents the map from zooming in when a cluster is clicked
+            spiderfyOnMaxZoom: false,   // Prevents markers from fanning out when clicked at max zoom
+            showCoverageOnHover: false,  // Keeps the UI clean by removing hover polygons
+            disableClusteringAtZoom: 13,
+            maxClusterRadius: 30,
+            iconCreateFunction: function (cluster) {
+                return L.divIcon({
+                    html: `<svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" style="transform: rotate(45deg); width: 100%; height: 100%; filter: drop-shadow(0px 0px 3px rgba(255,255,255,0.8));">
+                        <path d="M 128 512 C 128 512 128 128 256 0 C 384 128 384 512 384 512 Z" fill="#ff0000" stroke="white" stroke-width="40" stroke-linejoin="round"/>
+                    </svg>`,
+                    className: 'boat',
+                    iconAnchor: [11.5, 11.5],
+                    iconSize: [23, 23]
+                });
+            }
+        });
+        function fetchAndDisplayWFSBoats() {
+            var wfsUrl = "https://dntservicetruck.co.th/fetch_wfs.php";
+            fetch(wfsUrl)
+                .then(response => response.json())
+                .then(data => {
+                    redBoatCluster.clearLayers();
+                    var geoJsonLayer = L.geoJSON(data, {
+                        pointToLayer: function (feature, latlng) {
+                            var props = feature.properties;
+                            var heading = props.dir ? parseFloat(props.dir) : 0;
+                            var shipName = props.name;
+                            if (shipName === "Coastal stations" || !shipName || shipName.trim() === "") {
+                                if (props.mmis) {
+                                    shipName = props.mmis;
+                                } else if (props.callsign && props.callsign.trim() !== "") {
+                                    shipName = "Callsign: " + props.callsign;
+                                } else {
+                                    shipName = "Unknown Target";
+                                }
+                            }
+                            var boatIcon = L.divIcon({
+                                iconAnchor: [11.5, 11.5],
+                                iconSize: [23, 23],
+                                className: 'boat',
+                                html: `<svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" style="transform: rotate(${heading}deg); width: 100%; height: 100%; filter: drop-shadow(0px 0px 3px rgba(255,255,255,0.8));">
+                                <path d="M 128 512 C 128 512 128 128 256 0 C 384 128 384 512 384 512 Z" fill="#ff0000" stroke="white" stroke-width="40" stroke-linejoin="round"/>
+                            </svg>`
+                            });
+                            if (window.activeSearchTrack && window.activeSearchTrack.name === shipName) {
+                                updateSearchTrack(latlng);
+                            }
+                            return L.marker(latlng, {
+                                icon: boatIcon,
+                                title: shipName,
+                                boatColor: '#ff0000',
+                                boatLabel: '../assets/red-icon.png'
+                            });
+                        },
+                        onEachFeature: function (feature, layer) {
+                            var props = feature.properties;
+                            var shipName = props.name;
+                            if (shipName === "Coastal stations" || !shipName || shipName.trim() === "") {
+                                if (props.mmis) {
+                                    shipName = props.mmis;
+                                } else if (props.callsign && props.callsign.trim() !== "") {
+                                    shipName = "Callsign: " + props.callsign;
+                                } else {
+                                    shipName = "Unknown Target";
+                                }
+                            }
+                            layer.bindTooltip(shipName.toString(), {
+                                permanent: true,
+                                direction: 'top',
+                                className: 'transparent-tooltip',
+                                offset: [0, -10]
+                            });
+                        }
+                    });
+                    redBoatCluster.addLayer(geoJsonLayer);
+                })
+                .catch(err => {
+                    console.error("", err);
+                });
+        }
+        fetchAndDisplayWFSBoats();
+        setInterval(fetchAndDisplayWFSBoats, 60000);
+        const allSearchableBoats = L.layerGroup([liveBoatCluster, redBoatCluster]);
         const template1 = L.layerGroup([Maritimeline2, MaritimeIn2, MaritimeOut2, MaritimeFree2, MaritimeArea2]);
         const template2 = L.layerGroup([MaritimeIn, MaritimeOut, MaritimeFree, MaritimeArea]);
         const template3 = L.layerGroup([myStringLine, StringLine]);
         const template4 = L.layerGroup([MarineZone]);
-        window.template6 = L.layerGroup();
         const mapThree = L.tileLayer('https://www.google.cn/maps/vt?lyrs=s@189&gl=cn&x={x}&y={y}&z={z}', {
             maxZoom: 22,
             attribution: 'google'
@@ -1837,11 +2014,10 @@
             subdomains: ['mt0', 'mt1', 'mt2', 'mt3']
         });
         map = L.map('map', {
-            center: [13.34, 100.58],
-            preferCanvas: true, // <--- ADD THIS: Drastically speeds up contour lines
             zoomControl: false,
-            rotate: true,
-            zoom: 6
+            center: [13.34, 100.58],
+            zoom: 6,
+            preferCanvas: true
         });
         const baseLayers = {
             mapOne: L.tileLayer('https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
@@ -1930,7 +2106,6 @@
         SeaLevelContourGroup.addTo(map);
         seabedContourLayer.addTo(map);
         aisLayer.addTo(map);
-        window.template6.addTo(map);
         var zoomHome = L.Control.zoomHome({ position: 'topleft' });
         zoomHome.addTo(map);
         var zoomContainer = document.querySelector('.leaflet-control-zoomhome');
@@ -1994,8 +2169,6 @@
             showBearings: true
         });
         polylineMeasure.addTo(map);
-        const boatingControl = L.control.boating().addTo(map);
-        window.boatingControl = boatingControl;
         function triggerMeasureTool(event) {
             event.preventDefault();
             var originalBtn = document.getElementById('polyline-measure-control');
@@ -2036,6 +2209,8 @@
             const messagesContainer = document.querySelector('.messages');
             if (messagesContainer) messagesContainer.innerHTML = '';
         }
+        const boatingControl = L.control.boating().addTo(map);
+        window.boatingControl = boatingControl;
         window.activeSearchTrack = {
             name: null,
             session: null,
@@ -2065,7 +2240,7 @@
         var controlSearch = new L.control.search({
             container: 'findbox',
             collapsed: false,
-            layer: window.template6,
+            layer: allSearchableBoats,
             propertyName: 'title',
             initial: false,
             zoom: 16,
@@ -2232,7 +2407,7 @@
                 <path d="M220,128a4.0002,4.0002,0,0,1-4,4H132v84a4,4,0,0,1-8,0V132H40a4,4,0,0,1,0-8h84V40a4,4,0,0,1,8,0v84h84A4.0002,4.0002,0,0,1,220,128Z"/>
             </svg>`,
             iconSize: [32, 32],
-            iconAnchor: [16, 16] // Anchors the exact center to the coordinates
+            iconAnchor: [16, 16] // Anchors the exact center of the 32x32 icon to the coordinates
         });
         var centerMarker = L.centerMarker(map);
         centerMarker.setIcon(customSvgIcon);
@@ -2515,6 +2690,24 @@
                 displayReports();
             }
         }
+        function encodeReportData(report) {
+            try {
+                var jsonString = JSON.stringify(report);
+                return btoa(unescape(encodeURIComponent(jsonString)));
+            } catch (e) {
+                console.error("Encoding failed", e);
+                return "";
+            }
+        }
+        function decodeReportData(base64String) {
+            try {
+                var jsonString = decodeURIComponent(escape(atob(base64String)));
+                return JSON.parse(jsonString);
+            } catch (e) {
+                console.error("Decoding failed", e);
+                return null;
+            }
+        }
         function displayReports() {
             var container = document.getElementById('report-list-container');
             if (!container) return;
@@ -2532,9 +2725,6 @@
                     var missionTitle = document.createElement('h5');
                     missionTitle.className = 'text-white text-uppercase m-b-20';
                     missionTitle.textContent = report.mission || 'Mission ' + (index + 1);
-                    missionTitle.style.whiteSpace = 'nowrap';
-                    missionTitle.style.overflow = 'hidden';
-                    missionTitle.style.textOverflow = 'ellipsis';
                     missionTitle.style.width = '100%';
                     missionTitle.style.marginBottom = '5px'; // tighter spacing
                     anchor.appendChild(missionTitle);
@@ -2598,12 +2788,40 @@
                             printNauticalChart(report);
                         }
                     };
+                    var shareBtn = document.createElement('button');
+                    shareBtn.className = 'btn btn-success';
+                    shareBtn.style.fontSize = '14px';
+                    shareBtn.style.flex = '1';
+                    shareBtn.innerHTML = '<i class="fa fa-share-alt" style="font-size: 16px; margin-right: 5px;"></i> แชร์';
+                    shareBtn.onclick = async function (e) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        var encodedData = encodeReportData(report);
+                        var shareLink = window.location.origin + window.location.pathname + '?shared=' + encodedData;
+                        var shareText = `ภารกิจ: ${report.mission || 'ไม่ระบุ'}\n` +
+                            `เรือ: ${report.name || 'ไม่ระบุ'}\n` +
+                            `เวลา: ${sDate} ${sTime} - ${eDate} ${eTime}\n\n` +
+                            `แตะลิงก์ด้านล่างเพื่อโหลดเส้นทางลงในแผนที่ของคุณ:\n${shareLink}`;
+                        if (navigator.share) {
+                            try {
+                                await navigator.share({
+                                    title: 'แผนการเดินทาง: ' + (report.mission || 'ไม่ระบุ'),
+                                    text: shareText
+                                });
+                            } catch (error) {
+                                console.log('ยกเลิกการแชร์ หรือเกิดข้อผิดพลาด:', error);
+                            }
+                        } else {
+                            var lineShareUrl = 'https://line.me/R/msg/text/?' + encodeURIComponent(shareText);
+                            window.open(lineShareUrl, '_blank');
+                        }
+                    };
                     var delBtn = document.createElement('button');
                     delBtn.className = 'btn btn-danger';
                     delBtn.style.fontSize = '14px';
                     delBtn.innerHTML = '<i class="fa fa-trash" style="font-size: 20px; margin-right: 5px;"></i> ลบ';
                     anchor.onclick = function (e) {
-                        if (e.target === delBtn || e.target.closest('.btn')) return;
+                        if (e.target === delBtn || e.target === printBtn || e.target === shareBtn || e.target.closest('.btn')) return;
                         e.preventDefault();
                         if (typeof loadReportOnMap === 'function') {
                             loadReportOnMap(report.lines || []);
@@ -2625,6 +2843,7 @@
                         }
                     };
                     actionContainer.appendChild(printBtn);
+                    actionContainer.appendChild(shareBtn);
                     actionContainer.appendChild(delBtn);
                     li.appendChild(anchor);
                     li.appendChild(actionContainer);
@@ -2657,6 +2876,29 @@
             }, 100);
         }
         window.addEventListener('load', function () {
+            var urlParams = new URLSearchParams(window.location.search);
+            var sharedData = urlParams.get('shared');
+            if (sharedData) {
+                var importedReport = decodeReportData(sharedData);
+                if (importedReport) {
+                    var savedReports = JSON.parse(localStorage.getItem('savedPolygonReports') || '[]');
+                    var exists = savedReports.find(r => r.id === importedReport.id);
+                    if (!exists) {
+                        savedReports.push(importedReport);
+                        localStorage.setItem('savedPolygonReports', JSON.stringify(savedReports));
+                    }
+                    if (importedReport.lines && importedReport.lines.length > 0) {
+                        setTimeout(function () {
+                            if (typeof loadReportOnMap === 'function') {
+                                loadReportOnMap(importedReport.lines);
+                            }
+                        }, 800);
+                    }
+                    window.history.replaceState(null, '', window.location.pathname);
+                } else {
+                    alert('ไม่สามารถอ่านข้อมูลแผนการเดินทางได้ ลิงก์อาจไม่สมบูรณ์');
+                }
+            }
             displayReports();
         });
         function printNauticalChart(reportData) {

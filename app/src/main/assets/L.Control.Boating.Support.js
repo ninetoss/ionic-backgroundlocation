@@ -3,10 +3,16 @@ L.Control.Boating = L.Control.extend({
         position: 'topleft',
         legendPosition: 'topright',
         boatColor: '#3388ff',
-        lineColor1: '#3388ff',
+        otherBoatColor: '#ff8c00', // Orange color for online ships
+        offlineBoatColor: '#202978', // Blue color for offline ships
+        fleetUrl: 'location.json',
+        offlineUrl: 'geolocation.json', // Path to offline GeoJSON
+        fleetInterval: 5000,
+        lineColor1: 'transparent',
         lineColor2: 'transparent',
         circleColor: '#3388ff',
-        cacheLength: 4
+        cacheLength: 4,
+        myBoatName: '' // Add a default name for the local device
     },
     onAdd: function (map) {
         const container = L.DomUtil.create('div', 'leaflet-bar leaflet-control')
@@ -23,6 +29,7 @@ L.Control.Boating = L.Control.extend({
             lineColor1: this.options.lineColor1,
             lineColor2: this.options.lineColor2
         })
+        const pluginScope = this;
         this.legend.onAdd = function (map) {
             const container = L.DomUtil.create('div', 'leaflet-control leaflet-bar leaflet-control-boating-legend')
             container.innerHTML = `
@@ -89,30 +96,34 @@ L.Control.Boating = L.Control.extend({
                 </div>
             </div>`
             this.boatName = container.querySelector('#boatName')
+            this.boatDesc = container.querySelector('#boatDesc')
             this.heading = container.querySelector('#heading')
             this.knots = container.querySelector('#knots')
+            this.timeElapsed = container.querySelector('#timeElapsed')
             this.timeElapsed = container.querySelector('#timeElapsed')
             this.totalDist = container.querySelector('#totalDist')
             return container
         }
         this.boat = L.marker([0, 0], {
             icon: L.divIcon({
-                iconAnchor: [11.5, 11.5],
-                iconSize: [23, 23],
-                className: 'ship',
+                iconAnchor: [11.5, 11.5], iconSize: [23, 23], className: 'ship',
                 html: `<svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" id="boat-svg" style="filter: drop-shadow(0px 0px 3px rgba(255,255,255,0.8));">
                 <path d="M 128 512 C 128 512 128 128 256 0 C 384 128 384 512 384 512 Z" fill="${this.options.boatColor}" stroke="white" stroke-width="40" stroke-linejoin="round"/>
-            </svg>`
+              </svg>`,
             })
         })
-        this.boat.on('add', function () {
-            this.svg = this.getElement().querySelector('#boat-svg')
-        })
+        this.boat.on('add', function () { this.svg = this.getElement().querySelector('#boat-svg') })
         this.circle = L.circle([0, 0], { color: this.options.circleColor, stroke: false })
         this.line = L.polyline([[0, 0], [0, 0]], { color: this.options.lineColor2, lineCap: 'square' })
         this.linebg = L.polyline([[0, 0], [0, 0]], { color: this.options.lineColor1 })
-        this.track = L.polyline([], { color: '#3388ff', weight: 3 })
+        this.fleetMarkers = {};
+        this.offlineMarkers = {}; // Object to track offline blue boats
+        this.followedUserId = null;
+        this.sessionData = null;
+        this.fleetTrackLine = L.polyline([], { color: '#3388ff', weight: 3 });
+        this.fleetCircle = L.circle([0, 0], { color: '#3388ff', stroke: false })
         this.viewedRouteLayer = L.polyline([], { color: '#3388ff', weight: 3 });
+        this.viewedRouteID = null;
         setTimeout(() => this.updateRouteList(), 500);
         return container
     },
@@ -132,59 +143,73 @@ L.Control.Boating = L.Control.extend({
                 window.activeSearchTrack.session = null;
                 this.icon.classList.remove('following', 'requesting', 'locating');
                 this._map.removeControl(this.legend);
-                this.stopStopwatch();
+                if (this._stopwatchTimer) clearInterval(this._stopwatchTimer);
             } else {
                 this._map.panTo(window.activeSearchTrack.session.lastLatLng);
                 this.follow();
             }
             return;
         }
-        if (this.followedPeerId && this.sessionData) {
+        if (this.followedUserId && this.sessionData) {
             if (this.isFollowing()) {
                 this.saveRoute(this.sessionData);
-                this.followedPeerId = null;
+                this.followedUserId = null;
                 this.sessionData = null;
-                if (this._map.hasLayer(this.track)) this._map.removeLayer(this.track);
-                if (this._map.hasLayer(this.circle)) this._map.removeLayer(this.circle);
+                if (this._map.hasLayer(this.fleetTrackLine)) this._map.removeLayer(this.fleetTrackLine);
+                if (this._map.hasLayer(this.fleetCircle)) this._map.removeLayer(this.fleetCircle);
                 this.icon.classList.remove('following', 'requesting', 'locating');
                 this._map.removeControl(this.legend);
-                this.stopStopwatch();
+                if (this._stopwatchTimer) clearInterval(this._stopwatchTimer);
+                const listContainer = document.getElementById('device-list-container');
+                if (listContainer) {
+                    const items = listContainer.querySelectorAll('a.report-routes');
+                    items.forEach(item => item.style.backgroundColor = 'transparent');
+                }
             } else {
                 this._map.panTo(this.sessionData.lastLatLng);
                 this.follow();
             }
             return;
         }
-        if (this.viewedRouteLayer && this._map.hasLayer(this.viewedRouteLayer)) {
-            this._map.removeLayer(this.viewedRouteLayer);
-            return;
-        }
         if (this.isFollowing()) this.stop()
         else if (this.isLocating()) { this._map.panTo(this.lastPosition.latlng); this.follow(); }
         else if (!this.isRequesting()) this.request()
     },
+    onDragStart: function () { if (this.isFollowing()) this.unfollow() },
+    onMoveEnd: function () { if ((this.isLocating() || this.isFollowing()) && this.lastPosition) this.updateLine(this.lastPosition) },
     request: function () {
         this._map.on('moveend', this.onMoveEnd, this)
         this._map.on('dragstart', this.onDragStart, this)
         this._map.on('locationfound', this.onLocationFound, this)
         this._map.on('locationerror', this.onLocationError, this)
-        this._map.on('zoomend', this.updateSizes, this)
+        this._map.on('zoomend', this.updateSizes, this) // <-- Add this line
         this._map.locate({ watch: true, enableHighAccuracy: true })
-        this.icon.classList.remove('following')
-        this.icon.classList.remove('locating')
+        this.icon.classList.remove('following', 'locating')
         this.icon.classList.add('requesting')
-        if (window.Android && window.Android.startTracking) {
-            window.Android.startTracking();
-        }
-        this.myStartTime = new Date();
-        this.myTotalDistance = 0;
-        this.myLastLatLng = null;
+        this.fetchFleetData();
+        this.fetchOfflineData();
+        this.fleetIntervalId = setInterval(() => {
+            this.fetchFleetData();
+            this.fetchOfflineData();
+        }, this.options.fleetInterval);
+        this.myStartTime = new Date(); // New: Start time
+        this.myTotalDistance = 0;      // New: Distance counter
+        this.myLastLatLng = null;      // New: Last coordinate tracker
+        this._map.locate({ watch: true, enableHighAccuracy: true })
+    },
+    follow: function () {
+        this._map.options.scrollWheelZoom = 'center'
+        this._map.options.doubleClickZoom = 'center'
+        this.icon.classList.remove('requesting', 'locating')
+        this.icon.classList.add('following')
+    },
+    unfollow: function () {
+        this._map.options.scrollWheelZoom = true
+        this._map.options.doubleClickZoom = true
+        this.icon.classList.remove('requesting', 'following')
+        this.icon.classList.add('locating')
     },
     stop: function () {
-        if (this.sessionData) {
-            this.saveRoute(this.sessionData);
-            this.sessionData = null;
-        }
         this._map.stopLocate()
         this._map.off('moveend', this.onMoveEnd, this)
         this._map.off('dragstart', this.onDragStart, this)
@@ -193,70 +218,196 @@ L.Control.Boating = L.Control.extend({
         this._map.off('zoomend', this.updateSizes, this) // <-- Add this line
         this._map.options.scrollWheelZoom = true
         this._map.options.doubleClickZoom = true
-        this.icon.classList.remove('requesting')
-        this.icon.classList.remove('following')
-        this.icon.classList.remove('locating')
-        if (this.legend && this.legend._map) this._map.removeControl(this.legend)
+        this.icon.classList.remove('requesting', 'following', 'locating')
+        this._map.removeControl(this.legend)
         this._map.removeLayer(this.circle)
         this._map.removeLayer(this.linebg)
         this._map.removeLayer(this.line)
         this._map.removeLayer(this.boat)
-        this._map.removeLayer(this.track)
-        this.track.setLatLngs([]);
-        if (this.viewedRouteLayer) {
-            this._map.removeLayer(this.viewedRouteLayer);
+        if (this._stopwatchTimer) {
+            clearInterval(this._stopwatchTimer);
+            this._stopwatchTimer = null;
         }
-        if (this._map.setBearing) {
-            this._map.setBearing(0);
+
+        if (this.fleetIntervalId) clearInterval(this.fleetIntervalId);
+        if (this.sessionData) {
+            this.saveRoute(this.sessionData);
         }
-        if (window.Android && window.Android.stopTracking) {
-            window.Android.stopTracking();
-        }
+        for (let id in this.fleetMarkers) this._map.removeLayer(this.fleetMarkers[id]);
+        this.fleetMarkers = {};
+        for (let name in this.offlineMarkers) this._map.removeLayer(this.offlineMarkers[name]);
+        this.offlineMarkers = {};
+        if (this._map.hasLayer(this.fleetTrackLine)) this._map.removeLayer(this.fleetTrackLine);
+        if (this._map.hasLayer(this.fleetCircle)) this._map.removeLayer(this.fleetCircle);
+        this.followedUserId = null;
+        this.sessionData = null;
+        const listContainer = document.getElementById('device-list-container');
+        if (listContainer) listContainer.innerHTML = '';
         this.myStartTime = null;
         this.myTotalDistance = 0;
         this.myLastLatLng = null;
     },
-    onDragStart: function () {
-        if (this.isFollowing()) {
-            this.unfollow()
-        }
+    fetchOfflineData: function () {
+        const cacheBuster = '?t=' + new Date().getTime();
+        fetch(this.options.offlineUrl + cacheBuster)
+            .then(response => response.json())
+            .then(data => this.updateOfflineMarkers(data))
+            .catch(err => console.error('Error fetching offline fleet data:', err));
     },
-    onMoveEnd: function () {
-        if ((this.isLocating() || this.isFollowing()) && this.lastPosition) {
-            this.updateLine(this.lastPosition)
-        }
-    },
-    follow: function () {
-        this._map.options.scrollWheelZoom = 'center'
-        this._map.options.doubleClickZoom = 'center'
-        this.icon.classList.remove('requesting')
-        this.icon.classList.remove('locating')
-        this.icon.classList.add('following')
-    },
-    unfollow: function () {
-        this._map.options.scrollWheelZoom = true;
-        this._map.options.doubleClickZoom = true;
-        this.icon.classList.remove('requesting', 'following');
-        this.icon.classList.add('locating');
-        if (this._map.hasLayer(this.circle)) {
-            this._map.removeLayer(this.circle);
-        }
-        if (this.sessionData) {
-            this.saveRoute(this.sessionData);
-            this.sessionData = null;
-            this.followedPeerId = null;
-            this.track.setLatLngs([]);
-            if (this._map.hasLayer(this.track)) {
-                this._map.removeLayer(this.track);
+    updateOfflineMarkers: function (data) {
+        if (!data || !data.features) return;
+        const activeOfflineNames = new Set();
+        data.features.forEach(feature => {
+            if (!feature.properties || !feature.properties.name) return;
+            const shipName = String(feature.properties.name);
+            activeOfflineNames.add(shipName);
+            const lng = parseFloat(feature.geometry.coordinates[0]);
+            const lat = parseFloat(feature.geometry.coordinates[1]);
+            const latlng = [lat, lng];
+            if (this.offlineMarkers[shipName]) {
+                this.offlineMarkers[shipName].setLatLng(latlng);
+            } else {
+                const marker = L.marker(latlng, {
+                    icon: L.divIcon({
+                        iconAnchor: [11.5, 11.5], iconSize: [23, 23], className: 'boat offline-boat',
+                        html: `<svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" style="transform: rotate(45deg); filter: drop-shadow(0px 0px 3px rgba(255,255,255,0.8));"> 
+                        <path d="M 128 512 C 128 512 128 128 256 0 C 384 128 384 512 384 512 Z" fill="${this.options.offlineBoatColor}" stroke="white" stroke-width="40" stroke-linejoin="round"/> 
+                    </svg>`
+                    })
+                }).addTo(this._map);
+                marker.bindTooltip(`${shipName}`, {
+                    permanent: true, direction: 'top', className: 'transparent-tooltip', offset: [0, -10]
+                });
+                this.offlineMarkers[shipName] = marker;
+            }
+        });
+        for (let name in this.offlineMarkers) {
+            if (!activeOfflineNames.has(name)) {
+                this._map.removeLayer(this.offlineMarkers[name]);
+                delete this.offlineMarkers[name];
             }
         }
     },
+    fetchFleetData: function () {
+        const cacheBuster = '?t=' + new Date().getTime();
+        fetch(this.options.fleetUrl + cacheBuster)
+            .then(response => response.json())
+            .then(data => this.updateFleetMarkers(data))
+            .catch(err => console.error('Error fetching fleet data:', err));
+    },
+    updateFleetMarkers: function (data) {
+        const activeUserIds = new Set(data.map(ship => String(ship.UserId)));
+        const listContainer = document.getElementById('device-list-container');
+        for (let id in this.fleetMarkers) {
+            if (!activeUserIds.has(String(id))) {
+                this._map.removeLayer(this.fleetMarkers[id]);
+                delete this.fleetMarkers[id];
+                if (listContainer) {
+                    const itemToRemove = document.getElementById(`device-item-${id}`);
+                    if (itemToRemove) itemToRemove.remove();
+                }
+            }
+        }
+        data.forEach(ship => {
+            const shipIdStr = String(ship.UserId);
+            const latlng = [parseFloat(ship.lat), parseFloat(ship.lng)];
+            const newLeafletLatLng = L.latLng(latlng[0], latlng[1]);
+            const heading = parseFloat(ship.bearing || 0);
+            if (this.fleetMarkers[shipIdStr]) {
+                const marker = this.fleetMarkers[shipIdStr];
+                marker.setLatLng(latlng);
+                const el = marker.getElement();
+                if (el) {
+                    const svg = el.querySelector('svg');
+                    if (svg) svg.style.transform = 'rotate(' + heading + 'deg)';
+                }
+                if (this.followedUserId === shipIdStr && this.sessionData) {
+                    const distMoved = this.sessionData.lastLatLng.distanceTo(newLeafletLatLng);
+                    if (distMoved > 0) {
+                        this.sessionData.totalDistance += distMoved;
+                        this.sessionData.path.push(newLeafletLatLng);
+                        this.sessionData.lastLatLng = newLeafletLatLng;
+                        this.fleetTrackLine.setLatLngs(this.sessionData.path);
+                        this.fleetCircle.setLatLng(newLeafletLatLng);
+                        if (this.isFollowing()) {
+                            this._map.panTo(newLeafletLatLng);
+                        }
+                    }
+                    this.updateFleetLegend(ship);
+                }
+            } else {
+                const marker = L.marker(latlng, {
+                    icon: L.divIcon({
+                        iconAnchor: [11.5, 11.5], iconSize: [23, 23], className: 'boat fleet-boat',
+                        html: `<svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" style="transform: rotate(${heading}deg); filter: drop-shadow(0px 0px 3px rgba(255,255,255,0.8));">
+                        <path d="M 128 512 C 128 512 128 128 256 0 C 384 128 384 512 384 512 Z" fill="${this.options.otherBoatColor}" stroke="white" stroke-width="40" stroke-linejoin="round"/>
+                    </svg>`,
+                    })
+                }).addTo(this._map);
+                marker.bindTooltip(`${ship.Number || 'Unknown'}`, {
+                    permanent: true, direction: 'top', className: 'transparent-tooltip', offset: [0, -10]
+                });
+                this.fleetMarkers[shipIdStr] = marker;
+                if (listContainer) {
+                    const listItem = document.createElement('li');
+                    listItem.id = `device-item-${shipIdStr}`;
+                    listItem.style.listStyle = 'none';
+                    listItem.className = 'device-list-item';
+                    listItem.innerHTML = `<a href="#" class="report-routes" style="text-decoration: none; display: block; padding: 5px; border-radius: 5px;">
+                    <h5 class="text-white text-uppercase m-b-20" style="margin: 0 0 3px 0;">${ship.Name || 'Unknown'}</h5>
+                    <table width="100%"><tbody><tr><td>
+                    <span class="text-white" style="display: block;">ประเภท ${ship.Type || 'Unknown'}</span>
+                    <span class="text-white" style="display: block;">สังกัด ${ship.UnitName || 'Unknown'}</span>
+                    </td></tr></tbody></table></a>`;
+                    listItem.addEventListener('click', (event) => {
+                        event.preventDefault();
+                        if (this._map && this.fleetMarkers[shipIdStr]) {
+                            const currentLatLng = this.fleetMarkers[shipIdStr].getLatLng();
+                            if (this.followedUserId && this.followedUserId !== shipIdStr) {
+                                if (this.sessionData) {
+                                    this.saveRoute(this.sessionData);
+                                }
+                            }
+                            if (this.viewedRouteLayer && this._map.hasLayer(this.viewedRouteLayer)) {
+                                this._map.removeLayer(this.viewedRouteLayer);
+                                this.viewedRouteID = null;
+                            }
+                            this.followedUserId = shipIdStr;
+                            this.icon.classList.remove('locating', 'requesting');
+                            this.icon.classList.add('following');
+
+                            if (this.legend && !this.legend._map) {
+                                this._map.addControl(this.legend);
+                            }
+                            if (this._map.hasLayer(this.circle)) this._map.removeLayer(this.circle);
+                            if (this._map.hasLayer(this.line)) this._map.removeLayer(this.line);
+                            if (this._map.hasLayer(this.linebg)) this._map.removeLayer(this.linebg);
+                            this.updateFleetLegend(ship);
+                            this.sessionData = {
+                                boatName: ship.Name || 'Unknown',
+                                startTime: new Date(),
+                                path: [currentLatLng],
+                                totalDistance: 0,
+                                lastLatLng: currentLatLng
+                            };
+                            this.fleetTrackLine.setLatLngs([currentLatLng]);
+                            if (!this._map.hasLayer(this.fleetTrackLine)) this.fleetTrackLine.addTo(this._map);
+                            this.fleetCircle.setLatLng(currentLatLng);
+                            if (!this._map.hasLayer(this.fleetCircle)) this.fleetCircle.addTo(this._map);
+                            this._map.setView(currentLatLng, 18);
+                            this.fleetMarkers[shipIdStr].openTooltip();
+                            const items = listContainer.querySelectorAll('a.report-routes');
+                            items.forEach(item => item.style.backgroundColor = 'transparent');
+                            listItem.querySelector('a').style.backgroundColor = 'rgba(255,255,255,0.2)';
+                        }
+                    });
+                    listContainer.appendChild(listItem);
+                }
+            }
+        });
+    },
     saveRoute: function (session) {
         if (!session || session.path.length < 2) return;
-        var myBoatName = this.options.boatName || this.options.myBoatName || 'Me';
-        if (session.boatName === myBoatName) {
-            return;
-        }
         var endTime = new Date();
         var startTime = session.startTime;
         var durationMs = endTime - startTime;
@@ -385,119 +536,24 @@ L.Control.Boating = L.Control.extend({
         e.latlngDMS = this.latlngDMS(e);
         e.smooth = this.smoothMotion(e);
         if (this.isRequesting()) {
-            const nameInput = document.getElementById("name");
-            const activeBoatName = (nameInput && nameInput.value.trim() !== "")
-                ? nameInput.value
-                : (this.options.boatName || 'Unknown Boat');
-            this.sessionData = {
-                startTime: new Date(),
-                totalDistance: 0,
-                path: [e.latlng],
-                lastLatLng: e.latlng,
-                boatName: activeBoatName // <-- Store the fetched name here for the report
-            };
-            this._map.addControl(this.legend)
-            this._map.addLayer(this.circle)
-            this._map.addLayer(this.linebg)
-            this._map.addLayer(this.line)
-            this._map.addLayer(this.boat)
-            this._map.addLayer(this.track)
-            this.follow()
-        }
-        if (this.sessionData) {
-            const dist = e.latlng.distanceTo(this.sessionData.lastLatLng);
-            this.sessionData.totalDistance += dist;
-            this.sessionData.path.push(e.latlng);
-            this.sessionData.lastLatLng = e.latlng;
-        }
-        this.track.addLatLng(e.latlng);
-        this.lastPosition = e;
-        if (this.isAppVisible === false) return;
-        if (this.isFollowing()) {
-            this._map.setView(e.latlng, 18);
-        }
-        this.updateLegend(e)
-        this.updateCircle(e)
-        this.updateLine(e)
-        this.updateBoat(e)
-        this.updateSizes()
-    },
-    trackPeerByName: function (name) {
-        let targetId = null;
-        for (let id in this.peerData) {
-            if (this.peerData[id].name === name) {
-                targetId = id;
-                break;
-            }
-        }
-        if (this.sessionData && this.followedPeerId !== String(targetId)) {
-            this.saveRoute(this.sessionData);
-            this.sessionData = null;
-            this.track.setLatLngs([]);
-        }
-        this.icon.classList.remove('requesting', 'locating');
-        this.icon.classList.add('following');
-        if (this.legend && !this.legend._map) {
             this._map.addControl(this.legend);
-        }
-        if (!this._map.hasLayer(this.circle)) {
-            this._map.addLayer(this.circle);
-        }
-        if (!this.sessionData) {
-            this.sessionData = {
-                startTime: new Date(),
-                totalDistance: 0,
-                path: [],
-                lastLatLng: null,
-                boatName: name
-            };
-            if (!this._map.hasLayer(this.track)) {
-                this._map.addLayer(this.track);
+            this._map.addLayer(this.boat);
+            if (!this.followedUserId) {
+                this._map.addLayer(this.circle);
+                this._map.addLayer(this.linebg);
+                this._map.addLayer(this.line);
             }
+            this.follow();
         }
-        if (targetId) {
-            this.followedPeerId = String(targetId);
-            const peer = this.peerData[targetId];
-            if (peer.latlng) {
-                this.circle.setLatLng(peer.latlng);
-                this.circle.setRadius(15);
-                this.sessionData.path.push(peer.latlng);
-                this.sessionData.lastLatLng = peer.latlng;
-                this.track.setLatLngs([peer.latlng]);
-                this._map.setView(peer.latlng, 20);
-            }
-            if (this.legend) {
-                const headingVal = Math.round(parseFloat(peer.heading || 0));
-                const speedValNum = parseFloat(peer.speed || 0).toFixed(2);
-                if (this.legend.boatName) this.legend.boatName.innerHTML = peer.name;
-                if (this.legend.heading) this.legend.heading.innerHTML = headingVal;
-                if (this.legend.knots) this.legend.knots.innerHTML = speedValNum;
-                if (this.legend.totalDist) this.legend.totalDist.innerHTML = "0.00";
-            }
-        } else {
-            if (this.legend && this.legend.boatName) {
-                this.legend.boatName.innerHTML = name;
-            }
+        this.updateBoat(e);
+        if (!this.followedUserId) {
+            if (this.isFollowing()) { this._map.setView(e.latlng, 18); }
+            this.updateLegend(e);
+            this.updateCircle(e);
+            this.updateLine(e);
+            this.updateSizes()
         }
-        this.startStopwatch();
-    },
-    startStopwatch: function () {
-        this.stopStopwatch(); // Ensure no duplicates run
-        this.stopwatchInterval = setInterval(() => {
-            if (this.sessionData && this.sessionData.startTime && this.legend && this.legend.timeElapsed) {
-                const diff = new Date() - this.sessionData.startTime;
-                const h = Math.floor(diff / 3600000);
-                const m = Math.floor((diff % 3600000) / 60000);
-                const s = Math.floor((diff % 60000) / 1000);
-                this.legend.timeElapsed.innerHTML = h + "h " + m + "m " + s + "s";
-            }
-        }, 1000);
-    },
-    stopStopwatch: function () {
-        if (this.stopwatchInterval) {
-            clearInterval(this.stopwatchInterval);
-            this.stopwatchInterval = null;
-        }
+        this.lastPosition = e;
     },
     onLocationError: function (e) {
         console.error(e)
@@ -538,17 +594,11 @@ L.Control.Boating = L.Control.extend({
     updateCircle: function (e) {
         this.circle.setLatLng(e.latlng)
         this.circle.setRadius(e.accuracy)
-        this.circle.setStyle({ opacity: 1, fillOpacity: 0.2 });
     },
     updateBoat: function (e) {
-        const heading = e.smooth.heading;
-        if (this.boat.svg) {
-            this.boat.svg.style.transform = 'rotate(0deg)';
-        }
-        this.boat.setLatLng(e.latlng);
-        if (this.isFollowing() && this._map.setBearing) {
-            this._map.setBearing(-heading);
-        }
+        const heading = e.smooth.heading
+        this.boat.svg.style.transform = 'rotate(' + heading + 'deg)'
+        this.boat.setLatLng(e.latlng)
     },
     updateLine: function (e) {
         const zoom = this._map.getZoom()
@@ -568,7 +618,6 @@ L.Control.Boating = L.Control.extend({
         )
         this.line.setLatLngs([e.latlng, dirPoint])
         this.linebg.setLatLngs([e.latlng, dirPoint])
-
         const metersPerPixel = 40000000 * this.cosD(e.latlng.lat) / (256 * Math.pow(2, zoom))
         const pixelsPerHour = speed / metersPerPixel * 3600
         this.line.setStyle({
@@ -576,32 +625,69 @@ L.Control.Boating = L.Control.extend({
             dashOffset: pixelsPerHour,
         })
     },
+    updateFleetLegend: function (ship) {
+        const heading = Math.round(parseFloat(ship.bearing || 0));
+        const speed = parseFloat(ship.speed || 0).toFixed(2);
+        let distNM = "0.00";
+        if (this.sessionData) {
+            distNM = (this.sessionData.totalDistance / 1852).toFixed(2);
+            if (this.legend.boatName) this.legend.boatName.innerHTML = this.sessionData.boatName;
+        }
+        let descHtml = "";
+        if (ship.Type || ship.UnitName) {
+            descHtml = `Type: ${ship.Type || 'Unknown'}<br>Unit: ${ship.UnitName || 'Unknown'}`;
+        } else if (ship.mmis || ship.callsign) {
+            descHtml = `MMSI: ${ship.mmis || 'N/A'}<br>Callsign: ${ship.callsign || 'N/A'}`;
+        } else {
+            descHtml = "No description available";
+        }
+        if (this.legend.boatDesc) this.legend.boatDesc.innerHTML = descHtml;
+        if (this.legend.heading) this.legend.heading.innerHTML = heading;
+        if (this.legend.knots) this.legend.knots.innerHTML = speed;
+        if (this.legend.totalDist) this.legend.totalDist.innerHTML = distNM;
+        if (this._stopwatchTimer) clearInterval(this._stopwatchTimer);
+        if (this.sessionData && this.sessionData.startTime && this.legend.timeElapsed) {
+            const startTime = this.sessionData.startTime;
+            const timeElement = this.legend.timeElapsed;
+            const tick = () => {
+                const diff = new Date() - startTime;
+                const h = Math.floor(diff / 3600000);
+                const m = Math.floor((diff % 3600000) / 60000);
+                const s = Math.floor((diff % 60000) / 1000);
+                timeElement.innerHTML = `${h}h ${m}m ${s}s`;
+            };
+
+            tick();
+            this._stopwatchTimer = setInterval(tick, 1000);
+        }
+    },
     updateLegend: function (e) {
         const nautic = 40000 / 360 / 60
         const heading = Math.round(e.smooth.heading)
         const speed = Math.round(e.smooth.speed * 36 / nautic) / 10
-        let timeStr = "00:00:00";
-        let distNM = "0.00";
-        if (this.sessionData) {
-            const diff = new Date() - this.sessionData.startTime;
-            const h = Math.floor(diff / 3600000);
-            const m = Math.floor((diff % 3600000) / 60000);
-            const s = Math.floor((diff % 60000) / 1000);
-            timeStr = h + "h " + m + "m " + s + "s";
-            distNM = (this.sessionData.totalDistance / 1852).toFixed(2);
+        if (this.myLastLatLng) {
+            this.myTotalDistance += this.myLastLatLng.distanceTo(e.latlng);
         }
-        const nameInput = document.getElementById("name");
-        let displayBoatName = this.options.boatName || 'Unknown Boat';
-        if (nameInput && nameInput.value.trim() !== "") {
-            displayBoatName = nameInput.value;
+        this.myLastLatLng = e.latlng;
+        const distNM = (this.myTotalDistance / 1852).toFixed(2);
+        if (this.legend.boatName) this.legend.boatName.innerHTML = this.options.myBoatName;
+        this.legend.heading.innerHTML = heading;
+        this.legend.knots.innerHTML = speed;
+        if (this.legend.totalDist) this.legend.totalDist.innerHTML = distNM;
+        if (this._stopwatchTimer) clearInterval(this._stopwatchTimer);
+        if (this.myStartTime && this.legend.timeElapsed) {
+            const startTime = this.myStartTime;
+            const timeElement = this.legend.timeElapsed;
+            const tick = () => {
+                const diff = new Date() - startTime;
+                const h = Math.floor(diff / 3600000);
+                const m = Math.floor((diff % 3600000) / 60000);
+                const s = Math.floor((diff % 60000) / 1000);
+                timeElement.innerHTML = `${h}h ${m}m ${s}s`;
+            };
+            tick();
+            this._stopwatchTimer = setInterval(tick, 1000);
         }
-        if (this.legend.boatName) {
-            this.legend.boatName.innerHTML = displayBoatName;
-        }
-        this.legend.heading.innerHTML = heading;     // Removed + ' °'
-        this.legend.knots.innerHTML = speed;         // Removed + ' kts'
-        if (this.legend.timeElapsed) this.legend.timeElapsed.innerHTML = timeStr;
-        if (this.legend.totalDist) this.legend.totalDist.innerHTML = distNM; // Removed + ' NM'
     },
     latlngDMS: function (e) {
         function dms(coord) {
@@ -611,10 +697,20 @@ L.Control.Boating = L.Control.extend({
             let m = Math.floor(float)
             float = (float - m) * 60
             let s = Math.round(float)
-            if (s === 60) { m = m + 1; s = 0; }
-            if (m === 60) { d = d + 1; m = 0; }
-            if (s < 10) { s = '0' + s }
-            if (m < 10) { m = '0' + m }
+            if (s === 60) {
+                m = m + 1
+                s = 0
+            }
+            if (m === 60) {
+                d = d + 1
+                m = 0
+            }
+            if (s < 10) {
+                s = '0' + s
+            }
+            if (m < 10) {
+                m = '0' + m
+            }
             return d + '&deg; ' + m + '&apos; ' + s + '&quot; '
         }
         return {
@@ -623,145 +719,25 @@ L.Control.Boating = L.Control.extend({
         }
     },
     smoothMotion: (function () {
-        const cache = [];
-        let lastValidHeading = 0;
+        const cache = []
         return function (e) {
-            cache.push(e);
+            cache.push(e)
             if (cache.length > this.options.cacheLength) {
-                cache.shift();
+                cache.shift()
             }
             const sumX = cache.reduce(
                 (sum, e) => sum + (e.speed || 0) * this.cosD(e.heading || 0), 0
-            );
+            )
             const sumY = cache.reduce(
                 (sum, e) => sum + (e.speed || 0) * this.sinD(e.heading || 0), 0
-            );
-            const avgSpeed = Math.sqrt(sumX ** 2 + sumY ** 2) / cache.length;
-            if (avgSpeed > 0.5) {
-                lastValidHeading = this.atan2D(sumY, sumX);
-            }
+            )
             return {
-                speed: avgSpeed,
-                heading: lastValidHeading,
-            };
-        };
-    })()
-});
+                speed: Math.sqrt(sumX ** 2 + sumY ** 2) / cache.length,
+                heading: this.atan2D(sumY, sumX),
+            }
+        }
+    })(),
+})
 L.control.boating = function (options) {
     return new L.Control.Boating(options)
 }
-function receiveServiceLocation(UserId, Number, lat, lng, bearing, speed) {
-    if (window.boatingControl) {
-        const locationEvent = {
-            latlng: L.latLng(lat, lng),
-            accuracy: 10,
-            heading: bearing,
-            speed: speed
-        };
-        window.boatingControl.onLocationFound(locationEvent);
-    }
-}
-window.liveMarkers = window.liveMarkers || {};
-window.wfsMarkers = window.wfsMarkers || {};
-window.liveBoatCluster = null;
-window.wfsBoatCluster = null;
-function initializeClusters(map) {
-    if (!window.liveBoatCluster) {
-        window.liveBoatCluster = L.markerClusterGroup({
-            animate: false,
-            animateAddingMarkers: false,
-            zoomToBoundsOnClick: false,
-            spiderfyOnMaxZoom: false,
-            showCoverageOnHover: false,
-            disableClusteringAtZoom: 13,
-            maxClusterRadius: 30,
-            iconCreateFunction: function (cluster) {
-                return L.divIcon({
-                    html: `<svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" style="transform: rotate(45deg); width: 100%; height: 100%; filter: drop-shadow(0px 0px 3px rgba(255,255,255,0.8));"> 
-                    <path d="M 128 512 C 128 512 128 128 256 0 C 384 128 384 512 384 512 Z" fill="#48975b" stroke="white" stroke-width="40" stroke-linejoin="round"/> 
-                    </svg>`,
-                    className: 'boat',
-                    iconAnchor: [11.5, 11.5],
-                    iconSize: [23, 23]
-                });
-            }
-        });
-        window.liveBoatCluster.addTo(map);
-    }
-    if (!window.wfsBoatCluster) {
-        window.wfsBoatCluster = L.markerClusterGroup({
-            animate: false,
-            animateAddingMarkers: false,
-            zoomToBoundsOnClick: false,
-            spiderfyOnMaxZoom: false,
-            showCoverageOnHover: false,
-            disableClusteringAtZoom: 13,
-            maxClusterRadius: 30,
-            iconCreateFunction: function (cluster) {
-                return L.divIcon({
-                    html: `<svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" style="transform: rotate(45deg); width: 100%; height: 100%; filter: drop-shadow(0px 0px 3px rgba(255,255,255,0.8));"> 
-                    <path d="M 128 512 C 128 512 128 128 256 0 C 384 128 384 512 384 512 Z" fill="#ff0000" stroke="white" stroke-width="40" stroke-linejoin="round"/> 
-                    </svg>`,
-                    className: 'wfs-boat',
-                    iconAnchor: [11.5, 11.5],
-                    iconSize: [23, 23]
-                });
-            }
-        });
-        window.wfsBoatCluster.addTo(map);
-    }
-}
-window.receiveLiveBoatLocation = function (name, lat, lng, heading, speed) {
-    const map = window.template6 || (window.boatingControl && window.boatingControl._map);
-    if (!map || isNaN(lat) || isNaN(lng)) return;
-    initializeClusters(map);
-    heading = parseFloat(heading) || 45;
-    const getIcon = (deg) => L.divIcon({
-        iconAnchor: [11.5, 11.5],
-        iconSize: [23, 23],
-        className: 'boat',
-        html: `<svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" style="transform: rotate(${deg}deg); width: 100%; height: 100%; filter: drop-shadow(0px 0px 3px rgba(255,255,255,0.8));"> 
-        <path d="M 128 512 C 128 512 128 128 256 0 C 384 128 384 512 384 512 Z" fill="#48975b" stroke="white" stroke-width="40" stroke-linejoin="round"/> 
-        </svg>`
-    });
-    if (window.liveMarkers[name]) {
-        const marker = window.liveMarkers[name];
-        marker.setLatLng([lat, lng]);
-        marker.setIcon(getIcon(heading));
-    } else {
-        const marker = L.marker([lat, lng], { icon: getIcon(heading), title: name, boatColor: '#48975b', boatLabel: '../assets/green-icon.png', heading: heading, speed: speed });
-        marker.bindTooltip(name, { permanent: true, direction: 'top', className: 'transparent-tooltip', offset: [0, -10] });
-        window.liveMarkers[name] = marker;
-        window.liveBoatCluster.addLayer(marker);
-    }
-    if (window.activeSearchTrack && window.activeSearchTrack.name === name) {
-        updateSearchTrack({ lat: lat, lng: lng });
-    }
-};
-window.receiveWfsBoatLocation = function (name, lat, lng, heading, speed) {
-    const map = window.template6 || (window.boatingControl && window.boatingControl._map);
-    if (!map || isNaN(lat) || isNaN(lng)) return;
-    initializeClusters(map);
-    heading = parseFloat(heading) || 0;
-    const getIcon = (deg) => L.divIcon({
-        iconAnchor: [11.5, 11.5],
-        iconSize: [23, 23],
-        className: 'wfs-boat',
-        html: `<svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" style="transform: rotate(${deg}deg); width: 100%; height: 100%; filter: drop-shadow(0px 0px 3px rgba(255,255,255,0.8));"> 
-        <path d="M 128 512 C 128 512 128 128 256 0 C 384 128 384 512 384 512 Z" fill="#ff0000" stroke="white" stroke-width="40" stroke-linejoin="round"/> 
-        </svg>`
-    });
-    if (window.wfsMarkers[name]) {
-        const marker = window.wfsMarkers[name];
-        marker.setLatLng([lat, lng]);
-        marker.setIcon(getIcon(heading));
-    } else {
-        const marker = L.marker([lat, lng], { icon: getIcon(heading), title: name, boatColor: '#ff0000', boatLabel: '../assets/red-icon.png', heading: heading, speed: speed });
-        marker.bindTooltip(name, { permanent: true, direction: 'top', className: 'transparent-tooltip', offset: [0, -10] });
-        window.wfsMarkers[name] = marker;
-        window.wfsBoatCluster.addLayer(marker);
-    }
-    if (window.activeSearchTrack && window.activeSearchTrack.name === name) {
-        updateSearchTrack({ lat: lat, lng: lng });
-    }
-};

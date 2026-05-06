@@ -1,39 +1,66 @@
 <!-- admin.html -->
-<video id="remoteVideo" autoplay playsinline style="width: 100%; max-width: 600px;"></video>
-<!-- Replace the old local path with this CDN link -->
+<button id="startBtn" style="padding: 15px; font-size: 18px; margin-bottom: 20px;">Start Operations Dashboard</button>
+<div id="videoGrid" style="display: flex; flex-wrap: wrap; gap: 10px;"></div>
+
 <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 <script>
-    const socket = io('https://dntservicetruck.co.th');
-    let peerConnection;
+    let socket;
+    const peers = {}; 
     const config = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+    const videoGrid = document.getElementById('videoGrid');
 
-    socket.emit('join', 'admin');
-
-    socket.on('signal', async (data) => {
-        if (!peerConnection) initPeer();
-
-        if (data.signal.type === 'offer') {
-            await peerConnection.setRemoteDescription(data.signal);
-            const answer = await peerConnection.createAnswer();
-            await peerConnection.setLocalDescription(answer);
-            socket.emit('signal', { to: 'mobile', signal: answer });
-        } else if (data.signal.candidate) {
-            await peerConnection.addIceCandidate(data.signal);
-        }
-    });
-
-    function initPeer() {
-        peerConnection = new RTCPeerConnection(config);
+    document.getElementById('startBtn').addEventListener('click', () => {
+        document.getElementById('startBtn').style.display = 'none';
         
-        // When the remote stream arrives, attach it to the video element
-        peerConnection.ontrack = (event) => {
-            document.getElementById('remoteVideo').srcObject = event.streams[0];
-        };
+        socket = io('https://webrtc-signaling-mbx6.onrender.com');
+        socket.emit('join', 'admin');
 
-        peerConnection.onicecandidate = (event) => {
-            if (event.candidate) {
-                socket.emit('signal', { to: 'mobile', signal: event.candidate });
+        socket.on('signal', async (data) => {
+            const senderId = data.from;
+
+            // NEW: Handle the disconnect signal
+            if (data.signal.type === 'disconnect') {
+                if (peers[senderId]) {
+                    peers[senderId].close();
+                    delete peers[senderId];
+                }
+                const videoBox = document.getElementById(`video-${senderId}`);
+                if (videoBox) videoBox.remove();
+                return; // Stop processing this signal
             }
-        };
-    }
+
+            if (!peers[senderId]) {
+                peers[senderId] = new RTCPeerConnection(config);
+                
+                const newVideo = document.createElement('video');
+                newVideo.id = `video-${senderId}`; // NEW: Tag the video with the sender's ID
+                newVideo.autoplay = true;
+                newVideo.playsInline = true;
+                newVideo.style.width = '300px';
+                newVideo.style.border = '2px solid black';
+                videoGrid.appendChild(newVideo);
+
+                peers[senderId].ontrack = (event) => {
+                    newVideo.srcObject = event.streams[0];
+                };
+
+                peers[senderId].onicecandidate = (event) => {
+                    if (event.candidate) {
+                        socket.emit('signal', { to: senderId, signal: event.candidate });
+                    }
+                };
+            }
+
+            const pc = peers[senderId];
+
+            if (data.signal.type === 'offer') {
+                await pc.setRemoteDescription(data.signal);
+                const answer = await pc.createAnswer();
+                await pc.setLocalDescription(answer);
+                socket.emit('signal', { to: senderId, signal: answer });
+            } else if (data.signal.candidate) {
+                await pc.addIceCandidate(data.signal);
+            }
+        });
+    });
 </script>

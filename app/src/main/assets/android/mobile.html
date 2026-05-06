@@ -1,41 +1,78 @@
 <!-- mobile.html -->
-<video id="localVideo" autoplay playsinline muted style="width: 200px;"></video>
-<!-- Replace the old local path with this CDN link -->
+<video id="localVideo" autoplay playsinline muted style="width: 200px; border: 2px solid red;"></video>
+<br>
+<button id="transmitBtn" style="padding: 15px; font-size: 18px; margin-top: 10px;">Connect to Admin</button>
+<!-- NEW: The Disconnect Button (Hidden by default) -->
+<button id="disconnectBtn" style="padding: 15px; font-size: 18px; margin-top: 10px; display: none; background-color: #ff4444; color: white; border: none;">Disconnect Admin</button>
+
 <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 <script>
-    const socket = io('https://dntservicetruck.co.th');
+    const socket = io('https://webrtc-signaling-mbx6.onrender.com');
     let peerConnection;
     const config = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
 
-    async function startStream() {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+    async function initCamera() {
+        const constraints = { video: { facingMode: "environment" }, audio: true };
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
         document.getElementById('localVideo').srcObject = stream;
+        return stream;
+    }
 
+    let localStreamPromise = initCamera();
+
+    document.getElementById('transmitBtn').addEventListener('click', async () => {
+        // Swap buttons
+        document.getElementById('transmitBtn').style.display = 'none';
+        document.getElementById('disconnectBtn').style.display = 'inline-block';
+        
+        const stream = await localStreamPromise;
         peerConnection = new RTCPeerConnection(config);
         stream.getTracks().forEach(track => peerConnection.addTrack(track, stream));
 
-        // Create an offer to send to the admin
         const offer = await peerConnection.createOffer();
         await peerConnection.setLocalDescription(offer);
         
         socket.emit('join', 'mobile');
         socket.emit('signal', { to: 'admin', signal: offer });
 
-        // Handle ICE candidates (network routing info)
         peerConnection.onicecandidate = (event) => {
             if (event.candidate) {
                 socket.emit('signal', { to: 'admin', signal: event.candidate });
             }
         };
-    }
 
-    socket.on('signal', async (data) => {
-        if (data.signal.type === 'answer') {
-            await peerConnection.setRemoteDescription(data.signal);
-        } else if (data.signal.candidate) {
-            await peerConnection.addIceCandidate(data.signal);
-        }
+        socket.on('signal', async (data) => {
+            if (data.signal.type === 'answer') {
+                await peerConnection.setRemoteDescription(data.signal);
+            } else if (data.signal.candidate) {
+                await peerConnection.addIceCandidate(data.signal);
+            }
+        });
     });
 
-    startStream();
+    // NEW: Handle Disconnection
+    document.getElementById('disconnectBtn').addEventListener('click', async () => {
+        // 1. Tell the admin to delete our video
+        socket.emit('signal', { to: 'admin', signal: { type: 'disconnect' } });
+
+        // 2. Turn off the camera/mic hardware
+        const stream = document.getElementById('localVideo').srcObject;
+        if (stream) {
+            stream.getTracks().forEach(track => track.stop());
+        }
+
+        // 3. Close the peer connection
+        if (peerConnection) {
+            peerConnection.close();
+            peerConnection = null;
+        }
+
+        // 4. Reset the UI back to normal
+        document.getElementById('disconnectBtn').style.display = 'none';
+        document.getElementById('transmitBtn').style.display = 'inline-block';
+        document.getElementById('transmitBtn').innerText = "Connect to Admin";
+        
+        // 5. Restart the camera locally so the user can see themselves again before reconnecting
+        localStreamPromise = initCamera();
+    });
 </script>

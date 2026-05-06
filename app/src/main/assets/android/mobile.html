@@ -1,0 +1,41 @@
+<!-- mobile.html -->
+<video id="localVideo" autoplay playsinline muted style="width: 200px;"></video>
+<!-- Replace the old local path with this CDN link -->
+<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+<script>
+    const socket = io('https://dntservicetruck.co.th');
+    let peerConnection;
+    const config = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+
+    async function startStream() {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        document.getElementById('localVideo').srcObject = stream;
+
+        peerConnection = new RTCPeerConnection(config);
+        stream.getTracks().forEach(track => peerConnection.addTrack(track, stream));
+
+        // Create an offer to send to the admin
+        const offer = await peerConnection.createOffer();
+        await peerConnection.setLocalDescription(offer);
+        
+        socket.emit('join', 'mobile');
+        socket.emit('signal', { to: 'admin', signal: offer });
+
+        // Handle ICE candidates (network routing info)
+        peerConnection.onicecandidate = (event) => {
+            if (event.candidate) {
+                socket.emit('signal', { to: 'admin', signal: event.candidate });
+            }
+        };
+    }
+
+    socket.on('signal', async (data) => {
+        if (data.signal.type === 'answer') {
+            await peerConnection.setRemoteDescription(data.signal);
+        } else if (data.signal.candidate) {
+            await peerConnection.addIceCandidate(data.signal);
+        }
+    });
+
+    startStream();
+</script>

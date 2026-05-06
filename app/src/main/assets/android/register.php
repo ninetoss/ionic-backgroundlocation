@@ -23,7 +23,7 @@ try {
     // In a real app, use password_hash($data['password'], PASSWORD_DEFAULT)
     $password = $data['password']; 
 
-    $sql = "INSERT INTO user (username, password) VALUES (:username, :password)";
+    $sql = "INSERT INTO tmp_patrol (username, password) VALUES (:username, :password)";
     $stmt = $conn->prepare($sql);
     
     if($stmt->execute(['username' => $username, 'password' => $password])) {

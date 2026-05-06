@@ -1,0 +1,39 @@
+<!-- admin.html -->
+<video id="remoteVideo" autoplay playsinline style="width: 100%; max-width: 600px;"></video>
+<!-- Replace the old local path with this CDN link -->
+<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+<script>
+    const socket = io('https://dntservicetruck.co.th');
+    let peerConnection;
+    const config = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+
+    socket.emit('join', 'admin');
+
+    socket.on('signal', async (data) => {
+        if (!peerConnection) initPeer();
+
+        if (data.signal.type === 'offer') {
+            await peerConnection.setRemoteDescription(data.signal);
+            const answer = await peerConnection.createAnswer();
+            await peerConnection.setLocalDescription(answer);
+            socket.emit('signal', { to: 'mobile', signal: answer });
+        } else if (data.signal.candidate) {
+            await peerConnection.addIceCandidate(data.signal);
+        }
+    });
+
+    function initPeer() {
+        peerConnection = new RTCPeerConnection(config);
+        
+        // When the remote stream arrives, attach it to the video element
+        peerConnection.ontrack = (event) => {
+            document.getElementById('remoteVideo').srcObject = event.streams[0];
+        };
+
+        peerConnection.onicecandidate = (event) => {
+            if (event.candidate) {
+                socket.emit('signal', { to: 'mobile', signal: event.candidate });
+            }
+        };
+    }
+</script>

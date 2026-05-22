@@ -12,6 +12,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
+import android.view.ViewGroup
 import android.webkit.JavascriptInterface
 import android.webkit.ValueCallback
 import android.webkit.WebResourceRequest
@@ -22,11 +23,12 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.mutableStateOf
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.core.net.toUri
 import com.ar.backgroundlocation.LocationService.Companion.ACTION_START
 import com.ar.backgroundlocation.LocationService.Companion.ACTION_STOP
-import com.pedro.library.view.OpenGlView
 import java.lang.ref.WeakReference
 import java.net.HttpURLConnection
 import java.net.URL
@@ -38,70 +40,31 @@ class MainActivity : ComponentActivity() {
     private var userId: String = ""
     private var userName: String = ""
     private var number: String = ""
+    private var jwtToken: String = "" 
     private var isLoggedIn: Boolean = false
 
-    private var filePathCallback: ValueCallback<Array<Uri>>? = null
-
-    // Register the Android file picker launcher
-    private val fileChooserLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
-        if (uri != null) {
-            filePathCallback?.onReceiveValue(arrayOf(uri))
-        } else {
-            filePathCallback?.onReceiveValue(null)
-        }
-        filePathCallback = null
-    }
-
-    private var webView: WebView? = null
-
-    private val pollingIntervalMs: Long = 60000 // 60 seconds
+    private val pollingIntervalMs: Long = 60000 
     private val handler = Handler(Looper.getMainLooper())
 
-    private val locationUpdateHandler = Handler(Looper.getMainLooper())
-    private var locationUpdateRunnable: Runnable? = null
-
-    private fun startPeriodicBoatUpdates() {
-        // Prevent accidental duplicate loops
-        stopPeriodicBoatUpdates()
-        
-        locationUpdateRunnable = object : Runnable {
-            override fun run() {
-                if (isLoggedIn) {
-                    startPeriodicBoatUpdates()
-                }
-                // Schedule the next update in 60,000 milliseconds (1 minute)
-                locationUpdateHandler.postDelayed(this, 60000)
-            }
-        }
-        // Trigger the first run immediately
-        locationUpdateHandler.post(locationUpdateRunnable!!)
-    }
-
-    private fun stopPeriodicBoatUpdates() {
-        locationUpdateRunnable?.let { locationUpdateHandler.removeCallbacks(it) }
-    }
-    
     private val boatFetchRunnable = object : Runnable {
         override fun run() {
-            fetchLiveBoatsCSV()
-            fetchWfsBoatsData()
-            // Schedule the next fetch
-            handler.postDelayed(this, pollingIntervalMs)
+            if (isLoggedIn) {
+                fetchLiveBoatsCSV()
+                fetchWfsBoatsData()
+            }
+            handler.postDelayed(this, pollingIntervalMs) 
         }
+    }
+
+    private fun startBoatPolling() {
+        handler.removeCallbacks(boatFetchRunnable)
+        handler.post(boatFetchRunnable)
     }
 
     companion object {
         var webViewRef: WeakReference<WebView>? = null
-        var openGlViewRef: OpenGlView? = null
-    }
-
-    private val statusReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
-            val status = intent?.getStringExtra("status") ?: ""
-            webViewRef?.get()?.post {
-                webViewRef?.get()?.evaluateJavascript("updateStreamStatus('$status')", null)
-            }
-        }
+        var persistentWebView: WebView? = null
+        var isWebRTCActive: Boolean = false
     }
 
     private val requestMultiplePermissions = registerForActivityResult(
@@ -112,32 +75,76 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private val webViewReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == "com.ar.backgroundlocation.REACH_WEBVIEW") {
+                // Critical: Ensure the WebView is detached from the background overlay 
+                // BEFORE triggering the Compose recomposition to prevent the white screen freeze.
+                // We use a Handler instead of wv.post to avoid deadlocks when the WebView is detached.
+                persistentWebView?.let { wv ->
+                    (wv.parent as? ViewGroup)?.removeView(wv)
+                    // Reset layout params to match Activity's container
+                    wv.layoutParams = ViewGroup.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT
+                    )
+                    
+                    // Trigger recomposition
+                    setContent {
+                        MainScreen(this@MainActivity)
+                    }
+                }
+            }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Signal background service to release WebView back to activity
+        if (StreamingService.isServiceRunning) {
+            val intent = Intent(this, StreamingService::class.java)
+            intent.action = "MOVE_TO_FOREGROUND"
+            startService(intent)
+        }
+        
+        // Ensure WebView is resumed if it was already attached
+        persistentWebView?.let { wv ->
+            wv.onResume()
+            wv.resumeTimers()
+        }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        // We move to background only if we are actively streaming.
+        if (isWebRTCActive) {
+            persistentWebView?.let { wv ->
+                val intent = Intent(this, StreamingService::class.java)
+                intent.action = "MOVE_TO_BACKGROUND"
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    startForegroundService(intent)
+                } else {
+                    startService(intent)
+                }
+            }
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        setContent {
-            MainScreen(this)
-        }
-
-        val filter = IntentFilter("STREAM_STATUS")
+        
         ContextCompat.registerReceiver(
             this,
-            statusReceiver,
-            filter,
+            webViewReceiver,
+            IntentFilter("com.ar.backgroundlocation.REACH_WEBVIEW"),
             ContextCompat.RECEIVER_NOT_EXPORTED
         )
 
         requestInitialPermissions()
-        setupWebView()
-    }
 
-    fun openFileChooser(callback: ValueCallback<Array<Uri>>?) {
-        // Cancel any existing callback
-        this.filePathCallback?.onReceiveValue(null)
-        this.filePathCallback = callback
-        
-        // Launch the native file picker
-        fileChooserLauncher.launch("*/*")
+        setContent {
+            MainScreen(this)
+        }
     }
 
     private fun requestInitialPermissions() {
@@ -158,56 +165,20 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun setupWebView() {
-        webView?.apply {
-            settings.javaScriptEnabled = true
-            settings.domStorageEnabled = true
-            
-            // 1. Trigger the data fetch ONLY after the map has completely loaded
-            webViewClient = object : WebViewClient() {
-                override fun onPageFinished(view: WebView?, url: String?) {
-                    super.onPageFinished(view, url)
-                    // startBoatPolling()
-                }
-            }
-            
-            // loadUrl("file:///android_asset/leaflet_map_server.html")
-        }
-    }
-
-    private fun startBoatPolling() {
-        handler.removeCallbacks(boatFetchRunnable)
-        handler.post(boatFetchRunnable) // Only post it once
-    }
-
-    private fun stopBoatPolling() {
-        handler.removeCallbacks(boatFetchRunnable)
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        try {
-            unregisterReceiver(statusReceiver)
-        } catch (e: Exception) {}
-        stopPeriodicBoatUpdates()
-    }
-
     private fun fetchLiveBoatsCSV() {
         Thread {
             try {
-                // 1. Trigger the PHP script (Disable caching here too just in case)
                 val triggerUrl = URL("https://dntservicetruck.co.th/fetch_boats.php")
                 val triggerConn = triggerUrl.openConnection() as HttpURLConnection
-                triggerConn.useCaches = false // Added
+                triggerConn.useCaches = false 
                 triggerConn.requestMethod = "GET"
                 triggerConn.inputStream.bufferedReader().use { it.readText() }
                 triggerConn.disconnect()
 
-                // 2. Fetch the CSV
                 val dummyTime = System.currentTimeMillis()
                 val csvUrl = URL("https://dntservicetruck.co.th/latest_tracking.csv?dummy=$dummyTime")
                 val csvConn = csvUrl.openConnection() as HttpURLConnection
-                csvConn.useCaches = false // Added: Explicitly disable HTTP caching
+                csvConn.useCaches = false 
                 csvConn.requestMethod = "GET"
 
                 if (csvConn.responseCode == HttpURLConnection.HTTP_OK) {
@@ -223,7 +194,6 @@ class MainActivity : ComponentActivity() {
                         val headingIdx = headers.indexOf("ทิศทาง")
                         val speedIdx = if (headers.indexOf("ความเร็ว") != -1) headers.indexOf("ความเร็ว") else headers.indexOf("Speed")
 
-                        // 3. Build the JS string in the BACKGROUND thread
                         val jsCommands = java.lang.StringBuilder()
 
                         for (i in 1 until lines.size) {
@@ -253,14 +223,11 @@ class MainActivity : ComponentActivity() {
                                 speed = rawSpeed.toDoubleOrNull() ?: 0.0
                             }
 
-                            // Append to the StringBuilder instead of evaluating directly
                             jsCommands.append("if(typeof window.receiveLiveBoatLocation === 'function') { window.receiveLiveBoatLocation('$name', $lat, $lng, $heading, $speed); } ")
                         }
 
-                        // 4. Execute the combined string ONCE on the UI thread
                         runOnUiThread {
-                            val targetWebView = webView ?: MainActivity.webViewRef?.get()
-                            targetWebView?.evaluateJavascript(jsCommands.toString(), null)
+                            persistentWebView?.evaluateJavascript(jsCommands.toString(), null)
                         }
                     }
                 }
@@ -274,17 +241,15 @@ class MainActivity : ComponentActivity() {
     private fun fetchWfsBoatsData() {
         Thread {
             try {
-                // 1. Bust the cache by appending a dummy timestamp parameter
                 val dummyTime = System.currentTimeMillis()
                 val url = URL("https://dntservicetruck.co.th/fetch_wfs.php?dummy=$dummyTime")
                 val connection = url.openConnection() as HttpURLConnection
-                connection.useCaches = false // 2. Explicitly disable HTTP caching
+                connection.useCaches = false 
                 connection.requestMethod = "GET"
                 val inputStream = connection.inputStream
                 val result = inputStream.bufferedReader().use { it.readText() }
                 val jsonString = result.trim()
 
-                // 3. Create a single StringBuilder for all JavaScript commands
                 val jsCommands = java.lang.StringBuilder()
 
                 if (jsonString.startsWith("{")) {
@@ -325,7 +290,6 @@ class MainActivity : ComponentActivity() {
                                 val speed = properties.optDouble("speed", properties.optDouble("sog", properties.optDouble("SOG", 0.0)))
                                 val safeName = shipName.replace("'", "\\'")
 
-                                // Append to the StringBuilder
                                 jsCommands.append("if(typeof window.receiveWfsBoatLocation === 'function') { window.receiveWfsBoatLocation('$safeName', $lat, $lng, $heading, $speed); } ")
                             }
                         }
@@ -356,17 +320,14 @@ class MainActivity : ComponentActivity() {
                             val speed = item.optDouble("speed", item.optDouble("sog", item.optDouble("SOG", 0.0)))
                             val safeName = shipName.replace("'", "\\'")
 
-                            // Append to the StringBuilder
                             jsCommands.append("if(typeof window.receiveWfsBoatLocation === 'function') { window.receiveWfsBoatLocation('$safeName', $lat, $lng, $heading, $speed); } ")
                         }
                     }
                 }
 
-                // 4. Execute the combined string ONCE on the UI thread
                 if (jsCommands.isNotEmpty()) {
                     runOnUiThread {
-                        val targetWebView = webView ?: MainActivity.webViewRef?.get()
-                        targetWebView?.evaluateJavascript(jsCommands.toString(), null)
+                        persistentWebView?.evaluateJavascript(jsCommands.toString(), null)
                     }
                 }
 
@@ -404,26 +365,32 @@ class MainActivity : ComponentActivity() {
         }
 
         @JavascriptInterface
-        fun onLoginSuccess(id: String, role: String, username: String, userNumber: String) {
+        fun onLoginSuccess(id: String, role: String, username: String, userNumber: String, token: String) {
             userId = id 
             userName = username
             number = userNumber
+            jwtToken = token 
             isLoggedIn = true
 
-            // Notify WebView that login was successful
-            webView?.evaluateJavascript("if(typeof onLoginSuccess === 'function') onLoginSuccess('$id', '$role', '$username', '$userNumber');", null)
+            runOnUiThread {
+                persistentWebView?.evaluateJavascript("if(typeof onLoginSuccess === 'function') onLoginSuccess('$id', '$role', '$username', '$userNumber', '$token');", null)
+            }
 
-            // NEW: Start the boat fetching loop now that the user is logged in
             startBoatPolling()
     
-            webViewRef?.get()?.let { wv ->
+            persistentWebView?.let { wv ->
                 wv.post {
                     wv.webViewClient = object : WebViewClient() {
                         override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
                             val url = request?.url?.toString() ?: return null
-                            if (url.startsWith("https://www.example.com/")) {
+                            
+                            if (url.contains(".php")) return null
+
+                            if (url.startsWith("https://dntservicetruck.co.th/")) {
                                 try {
-                                    val assetPath = url.replace("https://www.example.com/", "")
+                                    val assetPath = url.replace("https://dntservicetruck.co.th/", "")
+                                    if (assetPath.isEmpty() || assetPath == "/") return null
+
                                     val mimeType = when {
                                         assetPath.contains(".html") -> "text/html"
                                         assetPath.contains(".js") -> "text/javascript"
@@ -437,8 +404,7 @@ class MainActivity : ComponentActivity() {
                                     }
                                     val inputStream = mContext.assets.open(assetPath)
                                     return WebResourceResponse(mimeType, "UTF-8", inputStream)
-                                } catch (e: Exception) {
-                                    // Asset not found
+                                } catch (_: Exception) {
                                 }
                             }
                             return super.shouldInterceptRequest(view, request)
@@ -449,13 +415,13 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
-                    wv.settings.apply {
-                        javaScriptEnabled = true
-                        domStorageEnabled = true 
-                        allowFileAccessFromFileURLs = true
-                        allowUniversalAccessFromFileURLs = true 
+                    wv.webChromeClient = object : android.webkit.WebChromeClient() {
+                        override fun onPermissionRequest(request: android.webkit.PermissionRequest) {
+                            runOnUiThread {
+                                request.grant(request.resources)
+                            }
+                        }
                     }
-                    WebView.setWebContentsDebuggingEnabled(true)
 
                     if (role == "admin") {
                         try {
@@ -464,8 +430,9 @@ class MainActivity : ComponentActivity() {
                             val buffer = ByteArray(size)
                             inputStream.read(buffer)
                             inputStream.close()
-                            val htmlContent = String(buffer)                    
-                            wv.loadDataWithBaseURL("https://www.example.com/", htmlContent, "text/html", "UTF-8", null)
+                            val htmlContent = String(buffer)
+                            
+                            wv.loadDataWithBaseURL("https://dntservicetruck.co.th/", htmlContent, "text/html", "UTF-8", null)
                         } catch (e: Exception) {
                             e.printStackTrace()
                             wv.loadUrl("file:///android_asset/leaflet_map_server.html")
@@ -478,7 +445,8 @@ class MainActivity : ComponentActivity() {
                             inputStream.read(buffer)
                             inputStream.close()
                             val htmlContent = String(buffer)
-                            wv.loadDataWithBaseURL("https://www.example.com/", htmlContent, "text/html", "UTF-8", null)
+                            
+                            wv.loadDataWithBaseURL("https://dntservicetruck.co.th/", htmlContent, "text/html", "UTF-8", null)
                         } catch (e: Exception) {
                             e.printStackTrace()
                             wv.loadUrl("file:///android_asset/leaflet_map_service.html")
@@ -498,21 +466,12 @@ class MainActivity : ComponentActivity() {
         fun getNumber(): String = number
 
         @JavascriptInterface
-        fun startStreaming(url: String) {
-            if (!hasPermissions()) {
-                requestPermissions()
-                Toast.makeText(mContext, "Please grant Camera & Audio permissions", Toast.LENGTH_SHORT).show()
-                return
-            }
-            if (!Settings.canDrawOverlays(mContext)) {
-                Toast.makeText(mContext, "Please enable 'Display over other apps'", Toast.LENGTH_LONG).show()
-                val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))
-                startActivity(intent)
-                return
-            }
+        fun getToken(): String = jwtToken
+
+        @JavascriptInterface
+        fun moveToBackground() {
             val intent = Intent(mContext, StreamingService::class.java)
-            intent.action = "START"
-            intent.putExtra("URL", url)
+            intent.action = "MOVE_TO_BACKGROUND"
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 mContext.startForegroundService(intent)
             } else {
@@ -521,9 +480,32 @@ class MainActivity : ComponentActivity() {
         }
 
         @JavascriptInterface
-        fun stopStreaming() {
+        fun startWebRTC() {
+            if (!hasPermissions()) {
+                requestPermissions()
+                return
+            }
+            if (!Settings.canDrawOverlays(mContext)) {
+                Toast.makeText(mContext, "Please enable 'Display over other apps' for background camera support", Toast.LENGTH_LONG).show()
+                val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, "package:$packageName".toUri())
+                startActivity(intent)
+                return
+            }
+            isWebRTCActive = true
             val intent = Intent(mContext, StreamingService::class.java)
-            intent.action = "STOP"
+            intent.action = "START_WEBRTC"
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                mContext.startForegroundService(intent)
+            } else {
+                mContext.startService(intent)
+            }
+        }
+
+        @JavascriptInterface
+        fun stopWebRTC() {
+            isWebRTCActive = false
+            val intent = Intent(mContext, StreamingService::class.java)
+            intent.action = "STOP_WEBRTC"
             mContext.startService(intent)
         }
 

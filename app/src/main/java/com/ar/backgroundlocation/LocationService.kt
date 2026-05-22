@@ -12,7 +12,9 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.edit
@@ -33,6 +35,7 @@ class LocationService : Service(), LocationUpdatesCallBack {
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
     
     private val fileLock = Any()
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     private var currentUserId: String = "0"
     private var currentNumber: String = "0"
@@ -232,8 +235,8 @@ class LocationService : Service(), LocationUpdatesCallBack {
                             activeUserIds.put(userId)
                             
                             val js = "receiveServerLocation('$userId', '$number', '$name', '$type', '$unitName', $lat, $lng, $bearing, $speed);"
-                            MainActivity.webViewRef?.get()?.let { webView ->
-                                webView.post {
+                            MainActivity.persistentWebView?.let { webView ->
+                                mainHandler.post {
                                     webView.evaluateJavascript(js, null)
                                 }
                             }
@@ -241,8 +244,8 @@ class LocationService : Service(), LocationUpdatesCallBack {
                     }
 
                     val purgeJs = "if(typeof purgeOfflineServerLocations === 'function') { purgeOfflineServerLocations('${activeUserIds}'); }"
-                    MainActivity.webViewRef?.get()?.let { webView ->
-                        webView.post {
+                    MainActivity.persistentWebView?.let { webView ->
+                        mainHandler.post {
                             webView.evaluateJavascript(purgeJs, null)
                         }
                     }
@@ -276,6 +279,7 @@ class LocationService : Service(), LocationUpdatesCallBack {
                         val feature = featuresArray.getJSONObject(i)
                         val properties = feature.getJSONObject("properties")
                         val shipName = properties.optString("name", "Unknown")
+                        val shipNumber = properties.optString("number", "Unknown")
                         val geometry = feature.getJSONObject("geometry")
                         val coordinates = geometry.getJSONArray("coordinates")
                         val lng = coordinates.getDouble(0)
@@ -284,9 +288,9 @@ class LocationService : Service(), LocationUpdatesCallBack {
                         // Add to our list
                         inactiveNames.put(shipName)
 
-                        val js = "receiveInactiveLocation('$shipName', $lat, $lng);"
-                        MainActivity.webViewRef?.get()?.let { webView ->
-                            webView.post {
+                        val js = "receiveInactiveLocation('$shipName', '$shipNumber', $lat, $lng);"
+                        MainActivity.persistentWebView?.let { webView ->
+                            mainHandler.post {
                                 webView.evaluateJavascript(js, null)
                             }
                         }
@@ -294,8 +298,8 @@ class LocationService : Service(), LocationUpdatesCallBack {
                     
                     // --- NEW: Send the offline list to the map for Garbage Collection ---
                     val purgeJs = "if(typeof purgeInactiveLocations === 'function') { purgeInactiveLocations('${inactiveNames.toString()}'); }"
-                    MainActivity.webViewRef?.get()?.let { webView ->
-                        webView.post {
+                    MainActivity.persistentWebView?.let { webView ->
+                        mainHandler.post {
                             webView.evaluateJavascript(purgeJs, null)
                         }
                     }
@@ -317,8 +321,8 @@ class LocationService : Service(), LocationUpdatesCallBack {
         }
 
         val js = "receiveServiceLocation('${userId}', '${number}', ${location.latitude}, ${location.longitude}, ${location.bearing}, ${location.speed})"
-        MainActivity.webViewRef?.get()?.let { webView ->
-            webView.post {
+        MainActivity.persistentWebView?.let { webView ->
+            mainHandler.post {
                 webView.evaluateJavascript(js, null)
             }
         }

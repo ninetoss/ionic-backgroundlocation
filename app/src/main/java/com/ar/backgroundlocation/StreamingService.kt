@@ -8,136 +8,171 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.graphics.PixelFormat
-import android.hardware.Camera
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
+import android.util.Log
+import android.os.Handler
+import android.os.Looper
 import android.view.Gravity
-import android.view.SurfaceView
 import android.view.WindowManager
 import androidx.core.app.NotificationCompat
-import com.pedro.library.rtmp.RtmpCamera1
-import com.pedro.common.ConnectChecker
 
-class StreamingService : Service(), ConnectChecker {
+class StreamingService : Service() {
 
-    private var rtmpCamera: RtmpCamera1? = null
-    private var surfaceView: SurfaceView? = null
     private var windowManager: WindowManager? = null
+    private var wakeLock: PowerManager.WakeLock? = null
+    private var mediaSession: android.media.session.MediaSession? = null
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    companion object {
+        var isServiceRunning = false
+    }
+
     override fun onCreate() {
         super.onCreate()
+        isServiceRunning = true
         
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            startForeground(101, createNotification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
-        } else {
-            startForeground(101, createNotification())
-        }
+        val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+        // Use a Partial WakeLock to keep CPU alive
+        wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "BackGroundLocation:StreamWakeLock")
+        wakeLock?.acquire()
 
-        try {
-            windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
-            val localSurfaceView = SurfaceView(this)
-            surfaceView = localSurfaceView
-            
-            // 1x1 Pixel Overlay (Hidden)
-            val layoutParams = WindowManager.LayoutParams(
-                1, 1,
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) 
-                    WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY 
-                else 
-                    WindowManager.LayoutParams.TYPE_PHONE,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or 
-                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or 
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
-                PixelFormat.TRANSLUCENT
-            )
-            layoutParams.gravity = Gravity.TOP or Gravity.START
-            
-            windowManager?.addView(localSurfaceView, layoutParams)
-            
-            // Initialize Encoder
-            rtmpCamera = RtmpCamera1(localSurfaceView, this)
-            
-        } catch (e: Exception) {
-            e.printStackTrace()
-            updateUI("Status: Error - " + e.message)
-            stopSelf()
+        // Create MediaSession to help keep the media pipeline open
+        mediaSession = android.media.session.MediaSession(this, "WebRTCStreaming").apply {
+            isActive = true
+        }
+    }
+
+    private fun startForegroundServiceInternal() {
+        val notification = createNotification()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            startForeground(101, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
+        } else {
+            startForeground(101, notification)
         }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val action = intent?.action
-        val url = intent?.getStringExtra("URL") ?: ""
-
-        if (action == "START" && url.isNotEmpty()) {
-            if (rtmpCamera?.isStreaming == false) {
-                if (rtmpCamera?.prepareAudio() == true && rtmpCamera?.prepareVideo() == true) {
-                    
-                    // --- CHANGED: Force Rear Camera ---
-                    // Explicitly start preview with the Back Camera before streaming
-                    rtmpCamera?.startPreview(Camera.CameraInfo.CAMERA_FACING_BACK)
-                    
-                    rtmpCamera?.startStream(url)
-                } else {
-                    updateUI("Status: Hardware Error (Restart App)")
-                }
-            } else if (rtmpCamera?.isStreaming == true) {
-                 updateUI("Status: Already Live")
-            }
-        } else if (action == "STOP") {
-            rtmpCamera?.stopStream()
-            rtmpCamera?.stopPreview() // <--- Stop preview explicitly
-            updateUI("Status: Stopped")
-            stopSelf()
+        
+        // Only trigger foreground status for actions that actually need the media pipeline/overlay active.
+        // MOVE_TO_FOREGROUND is just a signal and doesn't need to trigger a notification if not already active.
+        if (action == "START_WEBRTC" || action == "MOVE_TO_BACKGROUND") {
+            startForegroundServiceInternal()
         }
-        return START_NOT_STICKY
+        
+        when (action) {
+            "MOVE_TO_BACKGROUND" -> {
+                MainActivity.persistentWebView?.let { wv ->
+                    mainHandler.post {
+                        try {
+                            // Detach from current layout
+                            (wv.parent as? android.view.ViewGroup)?.removeView(wv)
+                            
+                            if (windowManager == null) {
+                                windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+                            }
+                            
+                            try { windowManager?.removeView(wv) } catch (e: Exception) {}
+
+                            // Use a small overlay window. FLAG_NOT_TOUCHABLE and FLAG_NOT_FOCUSABLE 
+                            // are key for background transparency.
+                            val layoutParams = WindowManager.LayoutParams(
+                                1, 1, 
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+                                    WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                                else
+                                    @Suppress("DEPRECATION")
+                                    WindowManager.LayoutParams.TYPE_PHONE,
+                                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                                        WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                                        WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                                        WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON,
+                                PixelFormat.TRANSLUCENT
+                            )
+                            layoutParams.gravity = Gravity.TOP or Gravity.START
+                            layoutParams.x = 0
+                            layoutParams.y = 0
+                            
+                            windowManager?.addView(wv, layoutParams)
+                            
+                            // Critical: Resuming WebView and its timers keeps the JS/WebRTC loop alive
+                            wv.onResume()
+                            wv.resumeTimers()
+                            
+                            Log.d("StreamingService", "WebView successfully moved to 1x1 overlay")
+                        } catch (e: Exception) {
+                            Log.e("StreamingService", "Error during MOVE_TO_BACKGROUND", e)
+                        }
+                    }
+                }
+            }
+            "MOVE_TO_FOREGROUND" -> {
+                MainActivity.persistentWebView?.let { wv ->
+                    mainHandler.post {
+                        try {
+                            // Remove from WindowManager Overlay
+                            try { windowManager?.removeView(wv) } catch (e: Exception) {}
+                            
+                            // Signal Activity to re-attach
+                            val intentBroadcast = Intent("com.ar.backgroundlocation.REACH_WEBVIEW")
+                            sendBroadcast(intentBroadcast)
+                            
+                            Log.d("StreamingService", "WebView moving to foreground")
+                        } catch (e: Exception) {
+                            Log.e("StreamingService", "Error moving WebView to foreground", e)
+                        }
+                    }
+                }
+            }
+            "START_WEBRTC" -> {
+                Log.d("StreamingService", "Status: WebRTC Background Active")
+            }
+            "STOP_WEBRTC" -> {
+                cleanup()
+                stopSelf()
+            }
+        }
+        return START_STICKY
+    }
+
+    private fun cleanup() {
+        try {
+            MainActivity.persistentWebView?.let { wv ->
+                mainHandler.post {
+                    try { windowManager?.removeView(wv) } catch (e: Exception) {}
+                }
+            }
+            windowManager = null
+            mediaSession?.isActive = false
+            mediaSession?.release()
+        } catch (e: Exception) {}
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        try {
-            if (rtmpCamera?.isStreaming == true) rtmpCamera?.stopStream()
-            rtmpCamera?.stopPreview() // <--- Ensure camera is released
-            surfaceView?.let { windowManager?.removeView(it) }
-        } catch (e: Exception) {}
-    }
-
-    override fun onConnectionSuccess() = updateUI("Status: Live (Connected)")
-    override fun onConnectionFailed(reason: String) {
-        updateUI("Status: Failed - $reason")
-        // Retry logic could go here, but for now we let the user retry
-        if (rtmpCamera?.isStreaming == true) rtmpCamera?.stopStream()
-        // Note: We leave preview running in case they want to retry immediately, 
-        // or you can call stopPreview() here too.
-    }
-    
-    override fun onNewBitrate(bitrate: Long) { /* Optional: Update UI with bitrate */ }
-    override fun onDisconnect() = updateUI("Status: Disconnected")
-    override fun onAuthError() = updateUI("Status: Auth Error")
-    override fun onAuthSuccess() = updateUI("Status: Auth Success")
-    override fun onConnectionStarted(url: String) {
-        updateUI("Status: Connecting...")
-    }
-
-    private fun updateUI(status: String) {
-        val intent = Intent("STREAM_STATUS")
-        intent.setPackage(packageName)
-        intent.putExtra("status", status)
-        sendBroadcast(intent)
+        isServiceRunning = false
+        cleanup()
+        if (wakeLock?.isHeld == true) {
+            wakeLock?.release()
+        }
     }
 
     private fun createNotification(): Notification {
         val channelId = "streaming_channel"
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(channelId, "Live Streaming", NotificationManager.IMPORTANCE_LOW)
+            val channel = NotificationChannel(channelId, "WebRTC Streaming", NotificationManager.IMPORTANCE_LOW)
             getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
         }
         return NotificationCompat.Builder(this, channelId)
-            .setContentTitle("Broadcasting Live")
-            .setContentText("Your stream is active in the background.")
+            .setContentTitle("WebRTC Active")
+            .setContentText("Background camera and microphone are active.")
             .setSmallIcon(R.mipmap.ic_launcher)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .build()
     }
 }

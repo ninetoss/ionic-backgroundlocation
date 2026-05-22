@@ -736,6 +736,11 @@ window.receiveLiveBoatLocation = function (name, lat, lng, heading, speed) {
     }
     if (window.activeSearchTrack && window.activeSearchTrack.name === name) {
         updateSearchTrack({ lat: lat, lng: lng });
+        if (window.boatingControl && window.boatingControl.legend) {
+            const legend = window.boatingControl.legend;
+            if (legend.heading) legend.heading.innerHTML = Math.round(heading);
+            if (legend.knots) legend.knots.innerHTML = parseFloat(speed || 0).toFixed(2);
+        }
     }
 };
 window.receiveWfsBoatLocation = function (name, lat, lng, heading, speed) {
@@ -763,5 +768,10 @@ window.receiveWfsBoatLocation = function (name, lat, lng, heading, speed) {
     }
     if (window.activeSearchTrack && window.activeSearchTrack.name === name) {
         updateSearchTrack({ lat: lat, lng: lng });
+        if (window.boatingControl && window.boatingControl.legend) {
+            const legend = window.boatingControl.legend;
+            if (legend.heading) legend.heading.innerHTML = Math.round(heading);
+            if (legend.knots) legend.knots.innerHTML = parseFloat(speed || 0).toFixed(2);
+        }
     }
 };

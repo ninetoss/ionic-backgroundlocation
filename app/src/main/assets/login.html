@@ -46,8 +46,11 @@
             if (result.status === "success") {
                 if (isLogin && window.Android) {
                     window.Android.onLoginSuccess(
-                        result.user_id,
-                        result.role
+                        result.id, 
+                        result.role, 
+                        result.username, 
+                        result.number,
+                        result.token // <-- NEW: Grabs the JWT from PHP and passes it to Kotlin
                     );
                 }
             } else {

@@ -1,71 +1,163 @@
 <?php
 date_default_timezone_set("Asia/Bangkok");
-$UserId = $_POST['UserId'] ?? null;
-$lat = $_POST['lat'] ?? null;
-$lng = $_POST['lng'] ?? null;
-$bearing = $_POST['bearing'] ?? null;
-$speed = $_POST['speed'] ?? null;
-$incoming_ts = $_POST['timestamp'] ?? time();
-if (is_numeric($incoming_ts)) {
-    if ($incoming_ts > 100000000000) {
-        $timestamp_seconds = $incoming_ts / 1000;
-    } else {
-        $timestamp_seconds = $incoming_ts;
-    }
-    $time = date("H:i:s", $timestamp_seconds);
-} else {
-    $time = $incoming_ts;
-}
-if (!$lat || !$lng) {
-    http_response_code(400);
-    exit("Invalid data");
-} // <--- Added closing brace here
-$data = [
-    "UserId" => $UserId, // <--- Changed '=' to '=>'
-    "lat" => $lat,
-    "lng" => $lng,
-    "bearing" => $bearing,
-    "speed" => $speed,
-    "timestamp" => $time
-];
-file_put_contents("location.json", json_encode($data));
-file_put_contents("log.txt", "{ $UserId, $lat, $lng, $bearing, $speed, $time },\n", FILE_APPEND);
-$host = "localhost";
-$dbname = "dntser_db";
+header('Content-Type: application/json');
+header('Access-Control-Allow-Origin: *');
+
+$servername = "localhost";
 $username = "dntser_db";
 $password = "dnt123456";
-try {
-    $conn = new PDO("mysql:host=$host;dbname=$dbname", $username, $password);
-    $conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-} catch (PDOException $e) {
-    echo "Connection failed: " . $e->getMessage();
+$dbname = "dntser_db";
+
+$UserId  = $_POST['UserId'] ?? null;
+$lat     = $_POST['lat'] ?? null;
+$lng     = $_POST['lng'] ?? null;
+$bearing = $_POST['bearing'] ?? null;
+$speed   = $_POST['speed'] ?? null;
+$status  = $_POST['status'] ?? null;
+
+if (!$UserId) { 
+    http_response_code(400); 
+    exit(json_encode(["error" => "Invalid data. Missing UserId."]));
 }
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $UserId = $_POST['UserId']; // We will add this in Kotlin
-    $lat = $_POST['lat'];
-    $lng = $_POST['lng'];
-    $bearing = $_POST['bearing'];
-    $speed = $_POST['speed'];
-    $timestamp = $_POST['timestamp'];
+if (!$status && (!$lat || !$lng)) {
+    http_response_code(400); 
+    exit(json_encode(["error" => "Invalid data. Must provide either status or lat/lng."]));
+}
 
-    // Insert or Update the location for this specific user
-    $stmt = $conn->prepare("INSERT INTO user_locations (user_id, latitude, longitude, bearing, speed, timestamp) 
-                            VALUES (?, ?, ?, ?, ?, ?) 
-                            ON DUPLICATE KEY UPDATE latitude=?, longitude=?, bearing=?, speed=?, timestamp=?");
-    $stmt->bind_param("iddddiiddddi", $UserId, $lat, $lng, $bearing, $speed, $timestamp, $lat, $lng, $bearing, $speed, $timestamp);
-    $stmt->execute();
-    echo "Location saved";
+$conn = new mysqli($servername, $username, $password, $dbname);
+if ($conn->connect_error) { 
+    die(json_encode(["error" => "Connection failed: " . $conn->connect_error]));
+}
 
-} elseif ($_SERVER['REQUEST_METHOD'] === 'GET') {
-    // --- ADMIN MODE: Get All Locations ---
-    // Join with user table to get names if needed
-    $sql = "SELECT ul.*, u.username FROM user_locations ul JOIN user u ON ul.user_id = u.id";
-    $result = $conn->query($sql);
-    
-    $locations = [];
-    while($row = $result->fetch_assoc()) {
-        $locations[] = $row;
+if ($status && !$lat && !$lng) {
+
+    if ($status === 'offline') {
+        $sql = "UPDATE tmp_patrol SET status=?, speed='0' WHERE id=?";
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param("ss", $status, $UserId);
+    } else {
+        $sql = "UPDATE tmp_patrol SET status=? WHERE id=?";
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param("ss", $status, $UserId);
     }
-    echo json_encode($locations);
+    
+    if ($stmt) {
+        $stmt->execute();
+        $stmt->close();
+    }
+} else if ($lat && $lng) {
+
+    $sql = "UPDATE tmp_patrol SET lat=?, lng=?, bearing=?, speed=?, status='online' WHERE id=?";
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param("sssss", $lat, $lng, $bearing, $speed, $UserId); 
+    if ($stmt) {
+        $stmt->execute(); 
+        $stmt->close();
+    }
 }
+
+$online_sql = "SELECT * FROM tmp_patrol WHERE status = 'online' AND lat IS NOT NULL AND lng IS NOT NULL AND id != '1'";
+$online_result = $conn->query($online_sql);
+
+$online_devices = array();
+if ($online_result && $online_result->num_rows > 0) { 
+    while($row = $online_result->fetch_assoc()) { 
+        $online_devices[] = array( 
+            "UserId" => (string)$row['id'], 
+            "Number" => $row['number'] ?? '', 
+            "Name" => $row['name'] ?? 'Unknown',
+            "Type" => $row['type'] ?? '',
+            "UnitName" => $row['unit_name'] ?? '',
+            "lat" => (string)$row['lat'],
+            "lng" => (string)$row['lng'],
+            "bearing" => (string)($row['bearing'] ?? '0.0'),
+            "speed" => (string)($row['speed'] ?? '0.0')
+        );
+    }
+}
+
+// 1. Encode the PHP array into a JSON string
+$json_data = json_encode($online_devices, JSON_UNESCAPED_UNICODE);
+
+// 2. Write the standard location.json file
+file_put_contents('location.json', $json_data);
+
+$online_sql = "SELECT * FROM tmp_patrol WHERE status = 'online' AND lat IS NOT NULL AND lng IS NOT NULL AND id != '1'";
+$online_result = $conn->query($online_sql);
+
+$online_features = array();
+if ($online_result && $online_result->num_rows > 0) { 
+    while($row = $online_result->fetch_assoc()) { 
+        $shipName = !empty($row['name']) ? $row['name'] : 'Unknown';
+        $shipNumber = !empty($row['number']) ? $row['number'] : 'Unknown';
+        
+        $features[] = array(
+            "type" => "Feature",
+            "geometry" => array(
+                "type" => "Point",
+                "coordinates" => array((float)$row['lng'], (float)$row['lat']) // GeoJSON uses [lng, lat]
+            ),
+            "properties" => array(
+                "name" => $shipName,
+                "number" => $shipNumber,
+                "status" => "online"
+            )
+        );
+    }
+}
+
+$online_geoJSON = array( 
+    "type" => "FeatureCollection", 
+    "features" => $features
+);
+
+// 1. Encode the PHP array into a JSON string (using PRETTY_PRINT to match geolocation)
+$json_data = json_encode($online_geoJSON, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+
+// 3. Create the JavaScript content by prepending a variable declaration
+$js_content = "const locationJSON = " . $json_data . ";";
+
+// 4. Write the content to location.js
+file_put_contents('location.js', $js_content);
+
+$offline_sql = "SELECT * FROM tmp_patrol WHERE (status = 'offline' OR status IS NULL) AND lat IS NOT NULL AND lng IS NOT NULL AND id != '1'";
+$offline_result = $conn->query($offline_sql);
+
+$features = array();
+if ($offline_result && $offline_result->num_rows > 0) {
+    while($row = $offline_result->fetch_assoc()) {
+        $shipName = !empty($row['name']) ? $row['name'] : 'Unknown';
+        $shipNumber = !empty($row['number']) ? $row['number'] : 'Unknown';
+        
+        $features[] = array(
+            "type" => "Feature",
+            "geometry" => array(
+                "type" => "Point",
+                "coordinates" => array((float)$row['lng'], (float)$row['lat']) // GeoJSON uses [lng, lat]
+            ),
+            "properties" => array(
+                "name" => $shipName,
+                "number" => $shipNumber,
+                "bearing" => (string)($row['bearing'] ?? '0.0'), // <-- NEW: Include the last known bearing
+                "status" => "offline"
+            )
+        );
+    }
+}
+
+$geoJSON = array( 
+    "type" => "FeatureCollection", 
+    "features" => $features
+);
+
+$json_content = json_encode($geoJSON, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+file_put_contents("geolocation.json", $json_content);
+
+if ($status && !$lat && !$lng) {
+    echo json_encode(["success" => "Device status set to $status. Files updated."]);
+} else {
+    echo json_encode(["success" => "Location logged successfully. Files updated."]);
+}
+
+$conn->close();
 ?>

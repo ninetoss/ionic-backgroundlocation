@@ -489,11 +489,16 @@ L.Control.Boating = L.Control.extend({
             type: type || 'Unknown',
             unit_name: unit_name || 'Unknown',
             latlng: e.latlng,
-            speed: e.speed,     // <--- ADD THIS
-            heading: e.heading  // <--- ADD THIS
+            speed: e.speed,
+            heading: e.heading
         };
         if (!this.peers[userId]) {
             const marker = L.marker(e.latlng, {
+                title: name || number || 'Unknown', // Used by propertyName: 'title'
+                speed: e.speed || 0,                // Used by your buildTip
+                heading: e.heading || 0,            // Used by your click event
+                boatType: type || 'Unknown',        // Used by your click event
+                boatLabel: '../assets/orange-icon.png',
                 icon: L.divIcon({
                     iconAnchor: [11.5, 11.5],
                     iconSize: [23, 23],
@@ -511,12 +516,18 @@ L.Control.Boating = L.Control.extend({
             marker.on('add', function () {
                 this.svg = this.getElement().querySelector('svg');
             });
-            marker.addTo(this._map);
+            if (window.template5) {
+                window.template5.addLayer(marker);
+            } else {
+                marker.addTo(this._map);
+            }
             this.peers[userId] = marker;
         }
         const marker = this.peers[userId];
         marker.setLatLng(e.latlng);
         marker.setTooltipContent(`${number || 'Unknown'}`);
+        marker.options.speed = e.speed || 0;
+        marker.options.heading = e.heading || 0;
         if (marker.svg) {
             marker.svg.style.transform = `rotate(${e.heading}deg)`;
             const path = marker.svg.querySelector('path');
@@ -571,27 +582,51 @@ L.Control.Boating = L.Control.extend({
         this.renderPeerList();
     },
     renderPeerList: function () {
-        const container = document.getElementById('peer-list-container');
+        const container = document.getElementById('device-list-container');
         if (!container) return;
         container.innerHTML = '';
         Object.keys(this.peerData).forEach(id => {
             const peer = this.peerData[id];
             const li = document.createElement('li');
             li.id = `peer-item-${id}`;
-            li.style.marginBottom = '15px';
+            li.style.marginBottom = '10px';
             li.style.listStyle = 'none';
-            li.innerHTML = `<a href="#" class="report-routes" style="text-decoration: none; display: block;">
-            <h5 class="text-white text-uppercase m-b-20" style="margin: 0 0 3px 0;">${peer.name || 'Unknown'}</h5>
-            <table width="100%">
-            <tbody>
-            <tr>
-            <td>
-            <span class="text-white" style="display: block;">ประเภท ${peer.type || 'Unknown'}</span>
-            <span class="text-white" style="display: block;">สังกัด ${peer.unit_name || 'Unknown'}</span>
-            </td>
-            </tr>
-            </tbody>
-            </table>
+            let isCameraActive = false;
+            let activeSenderId = id;
+            const checkId = id ? String(id).toLowerCase() : "";
+            const cleanName = peer.name ? String(peer.name).toLowerCase().replace(/\s+/g, '') : "";
+            const cleanNum = peer.number ? String(peer.number).toLowerCase().replace(/\s+/g, '') : "";
+            const extractedNum = cleanName.replace(/\D/g, '');
+            if (window.activeCameras) {
+                for (let camKey in window.activeCameras) {
+                    if (!camKey || camKey === "undefined" || camKey === "null") continue;
+                    let webrtcId = window.activeCameras[camKey];
+                    let cleanCam = camKey.toLowerCase().replace(/\s+/g, '');
+                    if (!cleanCam) continue;
+                    if (cleanName && cleanName === cleanCam) {
+                        isCameraActive = true; activeSenderId = webrtcId; break;
+                    }
+                    if (cleanNum && cleanNum === cleanCam) {
+                        isCameraActive = true; activeSenderId = webrtcId; break;
+                    }
+                    if (extractedNum.length > 0 && extractedNum === cleanCam) {
+                        isCameraActive = true; activeSenderId = webrtcId; break;
+                    }
+                    if (checkId === cleanCam || checkId.endsWith("." + cleanCam) || checkId.endsWith("_" + cleanCam)) {
+                        isCameraActive = true; activeSenderId = webrtcId; break;
+                    }
+                }
+            }
+            let displayName = peer.name || 'Unknown';
+            let speedVal = peer.speed || "0.00";
+            let formattedSpeed = parseFloat(speedVal).toFixed(1);
+            let iconPath = peer.icon || '../assets/orange-icon.png';
+            let dotColor = isCameraActive ? '#28a745' : 'transparent';
+            let dotHtml = `<span style="display: inline-block; width: 10px; height: 1px; border-radius: 50%; background-color: ${dotColor}; margin-left: 4px; box-shadow: 0 0 4px ${dotColor}80;" title="${isCameraActive ? 'Connected' : 'Not Connected'}"></span>`;
+            li.innerHTML = `<a href="#" class="search-result-item" style="padding-right: 10px; display: flex; width: 100%; height: 35px;">
+            <img src="${iconPath}" style="width: 18px; height: 18px; margin-top: 5px;">
+            <span style="font-size: 14px; font-weight: bold; margin-top: 10px; margin-left: 10px;">${displayName} ${dotHtml}</span>
+            <span style="margin-left: auto; font-size: 12px; color: #5f6368; font-weight: bold; margin-top: 15px; margin-right: 10px;">${formattedSpeed} kt</span>
             </a>`;
             li.addEventListener('click', (e) => {
                 e.preventDefault();
@@ -641,6 +676,15 @@ L.Control.Boating = L.Control.extend({
                 }
                 if (this._map && peer.latlng) {
                     this._map.setView(peer.latlng, 20);
+                }
+                if (isCameraActive) {
+                    if (typeof window.activatePiPMode === 'function') {
+                        window.activatePiPMode(peer.name, activeSenderId);
+                    }
+                } else {
+                    if (typeof window.closePiP === 'function') {
+                        window.closePiP();
+                    }
                 }
             });
             container.appendChild(li);
@@ -904,6 +948,20 @@ function receiveServerLocation(UserId, Number, Name, Type, UnitName, lat, lng, b
         };
         window.boatingControl.onLocationFound(locationEvent);
     }
+    if (window.boatingControl && window.boatingControl.followedPeerId === userId) {
+        var newLL = L.latLng(lat, lng);
+        if (window.boatingControl.circle) {
+            window.boatingControl.circle.setLatLng(newLL);
+        }
+        if (window.boatingControl.track) {
+            window.boatingControl.track.addLatLng(newLL);
+        }
+        if (window.boatingControl.sessionData) {
+            window.boatingControl.sessionData.path.push(newLL);
+            window.boatingControl.sessionData.lastLatLng = newLL; // Keep last known location updated
+        }
+        map.setView(newLL);
+    }
 }
 function receiveServiceLocation(UserId, Number, lat, lng, bearing, speed) {
     if (window.boatingControl) {
@@ -918,7 +976,7 @@ function receiveServiceLocation(UserId, Number, lat, lng, bearing, speed) {
         window.boatingControl.onLocationFound(locationEvent);
     }
 }
-function receiveInactiveLocation(name, lat, lng) {
+function receiveInactiveLocation(name, number, lat, lng) {
     if (window.boatingControl && window.boatingControl._map) {
         if (window.boatingControl.peerData) {
             for (let id in window.boatingControl.peerData) {
@@ -945,15 +1003,15 @@ function receiveInactiveLocation(name, lat, lng) {
                 <path d="M 128 512 C 128 512 128 128 256 0 C 384 128 384 512 384 512 Z" fill="#202978" stroke="white" stroke-width="40" stroke-linejoin="round"/>
             </svg>`
         });
-        const marker = L.marker([validLat, validLng], { icon: dockedIcon });
-        marker.bindTooltip(`${name}`, {
+        const marker = L.marker([validLat, validLng], { icon: dockedIcon, title: name, speed: 0, heading: 0, boatLabel: '../assets/blue-icon.png' });
+        marker.bindTooltip(`${number}`, {
             permanent: true,
             direction: 'top',
             className: 'transparent-tooltip'
         });
         window.boatingControl.inactiveMarkers[name] = marker;
-        if (window.template5) {
-            marker.addTo(window.template5);
+        if (window.template6) {
+            marker.addTo(window.template6);
         } else {
             marker.addTo(window.boatingControl._map);
         }
@@ -984,16 +1042,16 @@ window.purgeInactiveLocations = function (inactiveNamesString) {
     if (!window.boatingControl || !window.boatingControl.inactiveMarkers) return;
     try {
         const inactiveNames = JSON.parse(inactiveNamesString).map(String);
-        for (let name in window.boatingControl.inactiveMarkers) {
-            if (!inactiveNames.includes(String(name))) {
-                const marker = window.boatingControl.inactiveMarkers[name];
+        for (let number in window.boatingControl.inactiveMarkers) {
+            if (!inactiveNames.includes(String(number))) {
+                const marker = window.boatingControl.inactiveMarkers[number];
                 if (window.boatingControl._map.hasLayer(marker)) {
                     window.boatingControl._map.removeLayer(marker);
                 }
                 if (window.template5 && window.template5.hasLayer(marker)) {
                     window.template5.removeLayer(marker);
                 }
-                delete window.boatingControl.inactiveMarkers[name];
+                delete window.boatingControl.inactiveMarkers[number];
             }
         }
     } catch (e) {
@@ -1075,6 +1133,11 @@ window.receiveLiveBoatLocation = function (name, lat, lng, heading, speed) {
     }
     if (window.activeSearchTrack && window.activeSearchTrack.name === name) {
         updateSearchTrack({ lat: lat, lng: lng });
+        if (window.boatingControl && window.boatingControl.legend) {
+            const legend = window.boatingControl.legend;
+            if (legend.heading) legend.heading.innerHTML = Math.round(heading);
+            if (legend.knots) legend.knots.innerHTML = parseFloat(speed || 0).toFixed(2);
+        }
     }
 };
 window.receiveWfsBoatLocation = function (name, lat, lng, heading, speed) {
@@ -1102,5 +1165,10 @@ window.receiveWfsBoatLocation = function (name, lat, lng, heading, speed) {
     }
     if (window.activeSearchTrack && window.activeSearchTrack.name === name) {
         updateSearchTrack({ lat: lat, lng: lng });
+        if (window.boatingControl && window.boatingControl.legend) {
+            const legend = window.boatingControl.legend;
+            if (legend.heading) legend.heading.innerHTML = Math.round(heading);
+            if (legend.knots) legend.knots.innerHTML = parseFloat(speed || 0).toFixed(2);
+        }
     }
 };

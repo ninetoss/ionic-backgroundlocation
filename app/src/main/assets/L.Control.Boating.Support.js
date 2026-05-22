@@ -228,7 +228,6 @@ L.Control.Boating = L.Control.extend({
             clearInterval(this._stopwatchTimer);
             this._stopwatchTimer = null;
         }
-
         if (this.fleetIntervalId) clearInterval(this.fleetIntervalId);
         if (this.sessionData) {
             this.saveRoute(this.sessionData);
@@ -259,7 +258,9 @@ L.Control.Boating = L.Control.extend({
         const activeOfflineNames = new Set();
         data.features.forEach(feature => {
             if (!feature.properties || !feature.properties.name) return;
+            if (!feature.properties || !feature.properties.number) return;
             const shipName = String(feature.properties.name);
+            const shipNumber = String(feature.properties.number);
             activeOfflineNames.add(shipName);
             const lng = parseFloat(feature.geometry.coordinates[0]);
             const lat = parseFloat(feature.geometry.coordinates[1]);
@@ -268,16 +269,25 @@ L.Control.Boating = L.Control.extend({
                 this.offlineMarkers[shipName].setLatLng(latlng);
             } else {
                 const marker = L.marker(latlng, {
+                    title: shipName, // Used by propertyName: 'title'
+                    speed: 0,                // Used by your buildTip
+                    heading: 0,            // Used by your click event
+                    boatLabel: '../assets/blue-icon.png',
                     icon: L.divIcon({
                         iconAnchor: [11.5, 11.5], iconSize: [23, 23], className: 'boat offline-boat',
                         html: `<svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" style="transform: rotate(45deg); filter: drop-shadow(0px 0px 3px rgba(255,255,255,0.8));"> 
                         <path d="M 128 512 C 128 512 128 128 256 0 C 384 128 384 512 384 512 Z" fill="${this.options.offlineBoatColor}" stroke="white" stroke-width="40" stroke-linejoin="round"/> 
                     </svg>`
                     })
-                }).addTo(this._map);
-                marker.bindTooltip(`${shipName}`, {
+                });
+                marker.bindTooltip(`${shipNumber}`, {
                     permanent: true, direction: 'top', className: 'transparent-tooltip', offset: [0, -10]
                 });
+                if (window.template5) {
+                    window.template5.addLayer(marker);
+                } else {
+                    marker.addTo(this._map);
+                }
                 this.offlineMarkers[shipName] = marker;
             }
         });
@@ -296,16 +306,12 @@ L.Control.Boating = L.Control.extend({
             .catch(err => console.error('Error fetching fleet data:', err));
     },
     updateFleetMarkers: function (data) {
+        let listContainer = document.getElementById('device-list-container');
         const activeUserIds = new Set(data.map(ship => String(ship.UserId)));
-        const listContainer = document.getElementById('device-list-container');
         for (let id in this.fleetMarkers) {
             if (!activeUserIds.has(String(id))) {
                 this._map.removeLayer(this.fleetMarkers[id]);
                 delete this.fleetMarkers[id];
-                if (listContainer) {
-                    const itemToRemove = document.getElementById(`device-item-${id}`);
-                    if (itemToRemove) itemToRemove.remove();
-                }
             }
         }
         data.forEach(ship => {
@@ -341,70 +347,111 @@ L.Control.Boating = L.Control.extend({
                         iconAnchor: [11.5, 11.5], iconSize: [23, 23], className: 'boat fleet-boat',
                         html: `<svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" style="transform: rotate(${heading}deg); filter: drop-shadow(0px 0px 3px rgba(255,255,255,0.8));">
                         <path d="M 128 512 C 128 512 128 128 256 0 C 384 128 384 512 384 512 Z" fill="${this.options.otherBoatColor}" stroke="white" stroke-width="40" stroke-linejoin="round"/>
-                    </svg>`,
+                        </svg>`
                     })
                 }).addTo(this._map);
                 marker.bindTooltip(`${ship.Number || 'Unknown'}`, {
                     permanent: true, direction: 'top', className: 'transparent-tooltip', offset: [0, -10]
                 });
                 this.fleetMarkers[shipIdStr] = marker;
-                if (listContainer) {
-                    const listItem = document.createElement('li');
-                    listItem.id = `device-item-${shipIdStr}`;
-                    listItem.style.listStyle = 'none';
-                    listItem.className = 'device-list-item';
-                    listItem.innerHTML = `<a href="#" class="report-routes" style="text-decoration: none; display: block; padding: 5px; border-radius: 5px;">
-                    <h5 class="text-white text-uppercase m-b-20" style="margin: 0 0 3px 0;">${ship.Name || 'Unknown'}</h5>
-                    <table width="100%"><tbody><tr><td>
-                    <span class="text-white" style="display: block;">ประเภท ${ship.Type || 'Unknown'}</span>
-                    <span class="text-white" style="display: block;">สังกัด ${ship.UnitName || 'Unknown'}</span>
-                    </td></tr></tbody></table></a>`;
-                    listItem.addEventListener('click', (event) => {
-                        event.preventDefault();
-                        if (this._map && this.fleetMarkers[shipIdStr]) {
-                            const currentLatLng = this.fleetMarkers[shipIdStr].getLatLng();
-                            if (this.followedUserId && this.followedUserId !== shipIdStr) {
-                                if (this.sessionData) {
-                                    this.saveRoute(this.sessionData);
-                                }
-                            }
-                            if (this.viewedRouteLayer && this._map.hasLayer(this.viewedRouteLayer)) {
-                                this._map.removeLayer(this.viewedRouteLayer);
-                                this.viewedRouteID = null;
-                            }
-                            this.followedUserId = shipIdStr;
-                            this.icon.classList.remove('locating', 'requesting');
-                            this.icon.classList.add('following');
-
-                            if (this.legend && !this.legend._map) {
-                                this._map.addControl(this.legend);
-                            }
-                            if (this._map.hasLayer(this.circle)) this._map.removeLayer(this.circle);
-                            if (this._map.hasLayer(this.line)) this._map.removeLayer(this.line);
-                            if (this._map.hasLayer(this.linebg)) this._map.removeLayer(this.linebg);
-                            this.updateFleetLegend(ship);
-                            this.sessionData = {
-                                boatName: ship.Name || 'Unknown',
-                                startTime: new Date(),
-                                path: [currentLatLng],
-                                totalDistance: 0,
-                                lastLatLng: currentLatLng
-                            };
-                            this.fleetTrackLine.setLatLngs([currentLatLng]);
-                            if (!this._map.hasLayer(this.fleetTrackLine)) this.fleetTrackLine.addTo(this._map);
-                            this.fleetCircle.setLatLng(currentLatLng);
-                            if (!this._map.hasLayer(this.fleetCircle)) this.fleetCircle.addTo(this._map);
-                            this._map.setView(currentLatLng, 18);
-                            this.fleetMarkers[shipIdStr].openTooltip();
-                            const items = listContainer.querySelectorAll('a.report-routes');
-                            items.forEach(item => item.style.backgroundColor = 'transparent');
-                            listItem.querySelector('a').style.backgroundColor = 'rgba(255,255,255,0.2)';
-                        }
-                    });
-                    listContainer.appendChild(listItem);
-                }
             }
         });
+        if (listContainer) {
+            listContainer.innerHTML = '';
+            data.forEach(ship => {
+                const shipIdStr = String(ship.UserId);
+                let isCameraActive = false;
+                let activeSenderId = shipIdStr;
+                const checkId = shipIdStr ? String(shipIdStr).toLowerCase() : "";
+                const cleanName = ship.Name ? String(ship.Name).toLowerCase().replace(/\s+/g, '') : "";
+                const cleanNum = ship.Number ? String(ship.Number).toLowerCase().replace(/\s+/g, '') : "";
+                const extractedNum = cleanName.replace(/\D/g, '');
+                if (window.activeCameras) {
+                    for (let camKey in window.activeCameras) {
+                        if (!camKey || camKey === "undefined" || camKey === "null") continue;
+                        let webrtcId = window.activeCameras[camKey];
+                        let cleanCam = camKey.toLowerCase().replace(/\s+/g, '');
+                        if (!cleanCam) continue;
+                        if (cleanName && cleanName === cleanCam) { isCameraActive = true; activeSenderId = webrtcId; break; }
+                        if (cleanNum && cleanNum === cleanCam) { isCameraActive = true; activeSenderId = webrtcId; break; }
+                        if (extractedNum.length > 0 && extractedNum === cleanCam) { isCameraActive = true; activeSenderId = webrtcId; break; }
+                        if (checkId === cleanCam || checkId.endsWith("." + cleanCam) || checkId.endsWith("_" + cleanCam)) { isCameraActive = true; activeSenderId = webrtcId; break; }
+                    }
+                }
+                const listItem = document.createElement('li'); // Creating an <li> element
+                listItem.id = `device-item-${shipIdStr}`;
+                listItem.style.marginBottom = '5px';
+                listItem.style.listStyle = 'none'; // Ensures no bullets are shown
+                listItem.className = 'device-list-item';
+                let displayName = ship.Name || 'Unknown';
+                let speedVal = ship.speed || ship.Speed || "0.00";
+                let formattedSpeed = parseFloat(speedVal).toFixed(1);
+                let iconPath = ship.icon || '../assets/orange-icon.png';
+                let dotColor = isCameraActive ? '#28a745' : 'transparent';
+                let dotHtml = `<span style="display: inline-block; width: 10px; height: 1px; border-radius: 50%; background-color: ${dotColor}; margin-left: 4px; box-shadow: 0 0 4px ${dotColor}80;" title="${isCameraActive ? 'Connected' : 'Not Connected'}"></span>`;
+                listItem.innerHTML = `<a href="#" class="search-result-item" style="padding-right: 10px; display: flex; width: 100%; height: 35px;">
+                    <img src="${iconPath}" style="width: 18px; height: 18px; margin-top: 5px;">
+                    <span style="font-family: Futura Lt BT, Prompt, sans-serif; font-size: 14px; font-weight: bold; margin-top: 10px; margin-left: 10px;">${displayName} ${dotHtml}</span>
+                    <span style="font-family: Futura Lt BT, Prompt, sans-serif; margin-left: auto; font-size: 12px; color: #5f6368; font-weight: bold; margin-top: 15px; margin-right: 10px;">${formattedSpeed} kt</span>
+                    </a>`;
+                listItem.addEventListener('click', (event) => {
+                    event.preventDefault();
+                    if (this._map && this.fleetMarkers[shipIdStr]) {
+                        const currentLatLng = this.fleetMarkers[shipIdStr].getLatLng();
+                        if (this.followedUserId && this.followedUserId !== shipIdStr) {
+                            if (this.sessionData) {
+                                this.saveRoute(this.sessionData);
+                            }
+                        }
+                        if (this.viewedRouteLayer && this._map.hasLayer(this.viewedRouteLayer)) {
+                            this._map.removeLayer(this.viewedRouteLayer);
+                            this.viewedRouteID = null;
+                        }
+                        this.followedUserId = shipIdStr;
+                        this.icon.classList.remove('locating', 'requesting');
+                        this.icon.classList.add('following');
+
+                        if (this.legend && !this.legend._map) {
+                            this._map.addControl(this.legend);
+                        }
+                        if (this._map.hasLayer(this.circle)) this._map.removeLayer(this.circle);
+                        if (this._map.hasLayer(this.line)) this._map.removeLayer(this.line);
+                        if (this._map.hasLayer(this.linebg)) this._map.removeLayer(this.linebg);
+                        this.updateFleetLegend(ship);
+                        this.sessionData = {
+                            boatName: ship.Name || 'Unknown',
+                            startTime: new Date(),
+                            path: [currentLatLng],
+                            totalDistance: 0,
+                            lastLatLng: currentLatLng
+                        };
+                        this.fleetTrackLine.setLatLngs([currentLatLng]);
+                        if (!this._map.hasLayer(this.fleetTrackLine)) this.fleetTrackLine.addTo(this._map);
+                        this.fleetCircle.setLatLng(currentLatLng);
+                        if (!this._map.hasLayer(this.fleetCircle)) this.fleetCircle.addTo(this._map);
+                        this._map.setView(currentLatLng, 18);
+                        this.fleetMarkers[shipIdStr].openTooltip();
+                        const items = listContainer.querySelectorAll('a.search-result-item');
+                        items.forEach(item => {
+                            let hasCam = item.querySelector('span[title="Connected"]') !== null;
+                            item.style.backgroundColor = hasCam ? 'rgba(40, 167, 69, 0.2)' : 'rgba(255, 255, 255, 0.05)';
+                        });
+                        if (isCameraActive) {
+                            if (typeof window.activatePiPMode === 'function') {
+                                window.activatePiPMode(ship.Name, activeSenderId);
+                            }
+                        } else {
+                            if (typeof window.closePiP === 'function') {
+                                window.closePiP();
+                            }
+                        }
+                    }
+                });
+                listContainer.appendChild(listItem);
+            });
+        } else {
+            console.warn("Sidebar missing: Make sure coastal_stations.html has <ul id='device-list-container'></ul>");
+        }
     },
     saveRoute: function (session) {
         if (!session || session.path.length < 2) return;

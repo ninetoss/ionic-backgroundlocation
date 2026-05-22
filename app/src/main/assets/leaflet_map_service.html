@@ -35,6 +35,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
     <script src="dist/leaflet.centermarker.js"></script>
+    <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
     <style>
         html,
         body {
@@ -891,42 +892,34 @@
     <script>
         function toggleInfoPanel() {
             const infoPanel = document.querySelector('.info-panel');
-            const overlay = document.querySelector('.overlay');
             const wasActive = infoPanel && infoPanel.classList.contains('active');
             closeAllPanels();
             if (infoPanel && !wasActive) {
                 infoPanel.classList.add('active');
-                if (overlay) overlay.classList.add('active');
             }
         }
         function toggleLayerPanel() {
             const layerPanel = document.querySelector('.layer-panel');
-            const overlay = document.querySelector('.overlay');
             const wasActive = layerPanel && layerPanel.classList.contains('active');
             closeAllPanels();
             if (layerPanel && !wasActive) {
                 layerPanel.classList.add('active');
-                if (overlay) overlay.classList.add('active');
             }
         }
         function toggleSearchPanel() {
             const searchPanel = document.querySelector('.search-panel');
-            const overlay = document.querySelector('.overlay');
             const wasActive = searchPanel && searchPanel.classList.contains('active');
             closeAllPanels();
             if (searchPanel && !wasActive) {
                 searchPanel.classList.add('active');
-                if (overlay) overlay.classList.add('active');
             }
         }
         function toggleCreatePanel() {
             const createPanel = document.querySelector('.create-panel');
-            const overlay = document.querySelector('.overlay');
             const wasActive = createPanel && createPanel.classList.contains('active');
             closeAllPanels();
             if (createPanel && !wasActive) {
                 createPanel.classList.add('active');
-                if (overlay) overlay.classList.add('active');
             }
         }
         function closeAllPanels() {
@@ -941,12 +934,7 @@
             if (createPanel) createPanel.classList.remove('active');
             if (overlay) overlay.classList.remove('active');
         }
-        const overlayElement = document.querySelector('.overlay');
-        if (overlayElement) {
-            overlayElement.addEventListener('click', closeAllPanels);
-        }
     </script>
-    <div class="overlay"></div>
     <div class="info-panel">
         <div class="header-info-panel">
             <button class="close_icon" style="font-size: 20px;" onclick="toggleInfoPanel()"></button>
@@ -1303,7 +1291,6 @@
             </script>
         </div>
     </div>
-    <div class="overlay"></div>
     <div class="layer-panel">
         <div class="header-layer-panel">
             <button class="close_icon" style="font-size: 20px;" onclick="toggleLayerPanel()"></button>
@@ -1407,55 +1394,188 @@
                 </div>
             </div>
             <hr>
-            <div class="social-links">
-                <input type="hidden" id="streamUrl" value="rtmp://a.rtmp.youtube.com/live2/rv7y-2ezd-cgwy-3u2t-det0">
-                <button id="toggleBtnd" onclick="toggleStream()"
-                    style="width: 100%; padding: 12px; color: white; border: none; border-radius: 4px; font-weight: bold; cursor: pointer;">
+            <div class="social-links" style="flex-direction: column; gap: 10px; position: relative;">
+                <audio id="silentAudio" loop style="display:none;">
+                    <source src="data:audio/wav;base64,UklGRigAAABXQVZFWm51bQAAAAADAAEAgD4AAIA+AAABAAgAZGF0YQAAAAA=" type="audio/wav">
+                </audio>
+                <video id="localVideo" autoplay playsinline muted
+                    style="width: 100%; border-radius: 8px; border: 2px solid #5f6368; margin-top: 5px; display: none;"></video>
+                <button id="transmitBtn"
+                    style="width: 100%; padding: 12px; font-family: Futura Lt BT, Prompt, sans-serif; font-size: 16px; background-color: #5f6368; color: white; border: none; border-radius: 5px; font-weight: bold; cursor: pointer;">
                     START STREAMING
                 </button>
-                <div id="streamStatus" style="display: none;">Status: Ready</div>
-                <script>
-                    let isStreaming = false;
-                    function toggleStream() {
-                        const btn = document.getElementById('toggleBtnd');
-                        const url = document.getElementById('streamUrl').value;
-                        const statusDiv = document.getElementById('streamStatus');
-                        if (!isStreaming) {
-                            if (url && window.Android) {
-                                statusDiv.innerText = "Status: Initializing...";
-                                window.Android.startStreaming(url);
-                                btn.innerText = "STOP STREAMING";
-                                btn.style.backgroundColor = "#dc3545";
-                                isStreaming = true;
-                            } else {
-                                alert("URL is empty or App Interface missing.");
-                            }
-                        } else {
-                            if (window.Android) window.Android.stopStreaming();
-                            btn.innerText = "START STREAMING";
-                            btn.style.backgroundColor = "#28a745";
-                            isStreaming = false;
-                        }
-                    }
-                    function updateStreamStatus(status) {
-                        document.getElementById('streamStatus').innerText = status;
-                        if (status.includes("Failed") || status.includes("Disconnected") || status.includes("Stopped") || status.includes("Error")) {
-                            const btn = document.getElementById('toggleBtnd');
-                            btn.innerText = "START STREAMING";
-                            btn.style.backgroundColor = "#28a745";
-                            isStreaming = false;
-                        } else if (status.includes("Live")) {
-                            const btn = document.getElementById('toggleBtnd');
-                            btn.innerText = "STOP STREAMING";
-                            btn.style.backgroundColor = "#dc3545";
-                            isStreaming = true;
-                        }
-                    }
-                </script>
+                <button id="disconnectBtn"
+                    style="width: 100%; padding: 12px; font-family: Futura Lt BT, Prompt, sans-serif; font-size: 16px; background-color: #5f6368; color: white; border: none; border-radius: 5px; font-weight: bold; cursor: pointer; display: none;">
+                    STOP STREAMING
+                </button>
             </div>
+            <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+            <script>
+                let authData = { userId: "mobile", name: "", number: "" };
+                if (window.Android) {
+                    try {
+                        if (typeof window.Android.getUserId === 'function') authData.userId = window.Android.getUserId() || "mobile";
+                        if (typeof window.Android.getUserName === 'function') authData.name = window.Android.getUserName() || "";
+                        if (typeof window.Android.getNumber === 'function') authData.number = window.Android.getNumber() || "";
+                    } catch (e) {
+                        console.error("Android extraction error:", e);
+                    }
+                }
+                const socket = io('https://webrtc-signaling-mbx6.onrender.com', {
+                    auth: authData
+                });
+                socket.on('connect_error', (err) => {
+                    console.error("Connection Error:", err.message);
+                    const btn = document.getElementById('transmitBtn');
+                    btn.innerText = "❌ Connection Failed";
+                    btn.style.backgroundColor = "#6c757d";
+                    btn.disabled = true;
+                });
+                let peerConnection;
+                let localStream = null;
+                const config = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+                async function startHardware() {
+                    try {
+                        const constraints = { video: { facingMode: "environment" }, audio: true };
+                        localStream = await navigator.mediaDevices.getUserMedia(constraints);
+                        const videoElement = document.getElementById('localVideo');
+                        videoElement.srcObject = localStream;
+                        videoElement.style.display = 'block';
+                        return localStream;
+                    } catch (err) {
+                        console.error("Camera access denied:", err);
+                        alert("Please allow camera and microphone permissions to connect.");
+                        throw err;
+                    }
+                }
+                async function startBackgroundStream() {
+                    if (peerConnection) return true; // Already streaming
+                    try {
+                        const stream = await startHardware();
+                        peerConnection = new RTCPeerConnection(config);
+                        stream.getTracks().forEach(track => peerConnection.addTrack(track, stream));
+                        peerConnection.onicecandidate = (event) => {
+                            if (event.candidate) {
+                                socket.emit('signal', { to: 'admin', signal: event.candidate });
+                            }
+                        };
+                        const onSignal = async (data) => {
+                            if (data.signal.type === 'answer') {
+                                await peerConnection.setRemoteDescription(data.signal);
+                            } else if (data.signal.candidate) {
+                                await peerConnection.addIceCandidate(data.signal);
+                            }
+                        };
+                        socket.on('signal', onSignal);
+                        const offer = await peerConnection.createOffer();
+                        await peerConnection.setLocalDescription(offer);
+                        socket.emit('join', 'mobile');
+                        socket.emit('signal', { to: 'admin', signal: offer });
+                        return true;
+                    } catch (e) {
+                        console.error("Background stream failed:", e);
+                        return false;
+                    }
+                }
+                function stopBackgroundStream() {
+                    socket.emit('signal', { to: 'admin', signal: { type: 'disconnect' } });
+                    if (localStream) {
+                        localStream.getTracks().forEach(track => track.stop());
+                        localStream = null;
+                    }
+                    if (peerConnection) {
+                        peerConnection.close();
+                        peerConnection = null;
+                    }
+                    const videoElement = document.getElementById('localVideo');
+                    if (videoElement) {
+                        videoElement.srcObject = null;
+                        videoElement.style.display = 'none';
+                    }
+                }
+                document.getElementById('transmitBtn').addEventListener('click', async () => {
+                    if (window.peerConnection) return; // Already connected
+                    document.getElementById('transmitBtn').style.display = 'none';
+                    try {
+                        const silentAudio = document.getElementById('silentAudio');
+                        if (silentAudio) {
+                            silentAudio.play().catch(e => console.error("Silent audio failed:", e));
+                        }
+                        const stream = await startHardware();
+                        const videoElement = document.getElementById('localVideo');
+                        const keepAliveInterval = setInterval(() => {
+                            if (localStream && videoElement && videoElement.paused) {
+                                videoElement.play().catch(() => {});
+                            }
+                        }, 1000);
+                        const onVisibilityChange = () => {
+                            if (document.visibilityState === 'hidden' && localStream && videoElement) {
+                                videoElement.play().catch(() => {});
+                            }
+                        };
+                        document.addEventListener('visibilitychange', onVisibilityChange);
+                        if (window.Android && typeof window.Android.startWebRTC === 'function') {
+                            window.Android.startWebRTC();
+                        }
+                        document.getElementById('disconnectBtn').style.display = 'inline-block';
+                        peerConnection = new RTCPeerConnection(config);
+                        stream.getTracks().forEach(track => peerConnection.addTrack(track, stream));
+                        const offer = await peerConnection.createOffer();
+                        await peerConnection.setLocalDescription(offer);
+                        socket.emit('join', 'mobile');
+                        socket.emit('signal', { to: 'admin', signal: offer });
+                        peerConnection.onicecandidate = (event) => {
+                            if (event.candidate) {
+                                socket.emit('signal', { to: 'admin', signal: event.candidate });
+                            }
+                        };
+                        const cleanup = () => {
+                            clearInterval(keepAliveInterval);
+                            document.removeEventListener('visibilitychange', onVisibilityChange);
+                            socket.off('signal', onSignal);
+                        };
+                        const onSignal = async (data) => {
+                            if (data.signal.type === 'answer') {
+                                await peerConnection.setRemoteDescription(data.signal);
+                            } else if (data.signal.candidate) {
+                                await peerConnection.addIceCandidate(data.signal);
+                            } else if (data.signal.type === 'disconnect') {
+                                cleanup();
+                            }
+                        };
+                        socket.on('signal', onSignal);
+                    } catch (error) {
+                        document.getElementById('transmitBtn').style.display = 'inline-block';
+                        if (window.Android && window.Android.stopWebRTC) {
+                            window.Android.stopWebRTC();
+                        }
+                    }
+                });
+                document.getElementById('disconnectBtn').addEventListener('click', async () => {
+                    socket.emit('signal', { to: 'admin', signal: { type: 'disconnect' } });
+                    if (typeof window.stopBackgroundKeepAlive === 'function') {
+                        window.stopBackgroundKeepAlive();
+                    }
+                    if (localStream) {
+                        localStream.getTracks().forEach(track => track.stop());
+                        localStream = null;
+                    }
+                    const videoElement = document.getElementById('localVideo');
+                    videoElement.srcObject = null;
+                    videoElement.style.display = 'none';
+                    if (peerConnection) {
+                        peerConnection.close();
+                        peerConnection = null;
+                    }
+                    if (window.Android && window.Android.stopWebRTC) {
+                        window.Android.stopWebRTC();
+                    }
+                    document.getElementById('disconnectBtn').style.display = 'none';
+                    document.getElementById('transmitBtn').style.display = 'inline-block';
+                });
+            </script>
         </div>
     </div>
-    <div class="overlay"></div>
     <div class="search-panel">
         <div class="header-search-panel">
             <button class="close_icon" style="font-size: 20px;" onclick="toggleSearchPanel()"></button>
@@ -1465,14 +1585,13 @@
             <div class="link-list"></div>
             <hr>
             <div class="blog-category_block">
-                <ul id="peer-list-container"></ul>
+                <ul id="device-list-container"></ul>
             </div>
             <div class="blog-category_block">
                 <ul id="report-routes-container"></ul>
             </div>
         </div>
     </div>
-    <div class="overlay"></div>
     <div class="create-panel">
         <div class="header-create-panel">
             <button class="close_icon" style="font-size: 20px;" onclick="toggleCreatePanel()"></button>
@@ -2185,7 +2304,7 @@
                         $item.insertBefore($readMoreBtn);
                     } else {
                         $list.append($item);
-                        var $newBtn = $('<a href="#" class="read-more-btn">ดูเพิ่มเติม</a>');
+                        var $newBtn = $('<a href="#" class="read-more-btn keep-open">ดูเพิ่มเติม</a>');
                         $newBtn.on('click', function (e) {
                             e.preventDefault();
                             $list.find('.extra-result')
@@ -2875,6 +2994,18 @@
             });
             const slider = document.getElementById('ui-hourly-container');
             let isDown = false; let startX; let scrollLeft;
+            const panels = document.querySelectorAll('.info-panel, .layer-panel, .search-panel, .create-panel');
+            panels.forEach(panel => {
+                panel.addEventListener('click', function (event) {
+                    const clickedItem = event.target.closest('a, button');
+                    if (clickedItem) {
+                        if (clickedItem.classList.contains('keep-open')) {
+                            return; // Do nothing, let the button do its normal job
+                        }
+                        closeAllPanels();
+                    }
+                });
+            });
         });
     </script>
 </body>

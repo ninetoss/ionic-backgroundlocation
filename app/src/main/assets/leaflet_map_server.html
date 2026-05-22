@@ -34,6 +34,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
     <script src="dist/leaflet.centermarker.js"></script>
+    <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
     <style>
         html,
         body {
@@ -800,7 +801,7 @@
             font-weight: bold;
             margin-left: 8px;
         }
-
+        
         .leaflet-control-search {
             background: #ffffff !important;
             border: 1px solid #ccc !important;
@@ -886,46 +887,132 @@
 </head>
 
 <body>
-    <div id="map"></div>
+    <div id="map">
+        <div id="live-video-panel"
+            style="position: absolute; bottom: 20px; left: 20px; z-index: 1000; display: flex; flex-direction: column; gap: 10px; max-height: 90vh; overflow-y: auto; pointer-events: none;">
+        </div>
+    </div>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <script>
+        window.activeCameras = window.activeCameras || {};
+        let socket;
+        const peers = {};
+        const config = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+        const videoPanel = document.getElementById('live-video-panel');
+        socket = io('https://webrtc-signaling-mbx6.onrender.com');
+        socket.emit('join', 'admin');
+        socket.on('signal', async (data) => {
+            const senderId = data.from;
+            const vesselName = data.senderName || data.shipName || "Unknown Vessel";
+            if (data.signal.type === 'disconnect') {
+                if (peers[senderId]) {
+                    peers[senderId].close();
+                    delete peers[senderId];
+                }
+                const videoWrapper = document.getElementById(`wrapper-${senderId}`);
+                if (videoWrapper) videoWrapper.remove();
+                for (let key in window.activeCameras) {
+                    if (window.activeCameras[key] === senderId) delete window.activeCameras[key];
+                }
+                return;
+            }
+            if (!peers[senderId]) {
+                peers[senderId] = new RTCPeerConnection(config);
+                window.activeCameras[String(senderId)] = senderId;
+                if (data.shipName) window.activeCameras[String(data.shipName)] = senderId;
+                if (data.shipNumber) window.activeCameras[String(data.shipNumber)] = senderId;
+                if (vesselName) window.activeCameras[String(vesselName)] = senderId;
+                const wrapper = document.createElement('div');
+                wrapper.id = `wrapper-${senderId}`;
+                wrapper.style.cssText = 'display: none; background: rgba(0,0,0,0.85); border: 2px solid #28a745; border-radius: 6px; overflow: hidden; width: 260px; pointer-events: auto; box-shadow: 0 4px 10px rgba(0,0,0,0.5);';
+                const title = document.createElement('div');
+                title.innerHTML = `🔴 Live: ${vesselName} <button onclick="window.closePiP()" style="float: right; background: none; border: none; color: #ff4444; cursor: pointer; font-weight: bold;">X</button>`;
+                title.style.cssText = 'color: white; padding: 6px; font-size: 13px; font-weight: bold; background: #222; border-bottom: 1px solid #444;';
+                const newVideo = document.createElement('video');
+                newVideo.id = `video-${senderId}`;
+                newVideo.autoplay = true;
+                newVideo.playsInline = true;
+                newVideo.muted = true;
+                newVideo.style.cssText = 'width: 100%; display: block; background: #000; min-height: 140px;';
+                const audioBtn = document.createElement('button');
+                audioBtn.innerText = "🔇 Audio is Muted (Click to Unmute)";
+                audioBtn.style.cssText = 'width: 100%; padding: 6px; background: #333; color: #fff; border: none; cursor: pointer; font-size: 12px;';
+                audioBtn.onclick = () => {
+                    newVideo.muted = !newVideo.muted;
+                    audioBtn.innerText = newVideo.muted ? "🔇 Audio is Muted" : "🔊 Audio Playing";
+                    audioBtn.style.background = newVideo.muted ? "#333" : "#28a745";
+                };
+                wrapper.appendChild(title);
+                wrapper.appendChild(newVideo);
+                wrapper.appendChild(audioBtn);
+                videoPanel.appendChild(wrapper);
+                peers[senderId].ontrack = (event) => {
+                    newVideo.srcObject = event.streams[0];
+                };
+                peers[senderId].onicecandidate = (event) => {
+                    if (event.candidate) {
+                        socket.emit('signal', { to: senderId, signal: event.candidate });
+                    }
+                };
+            }
+            const pc = peers[senderId];
+            try {
+                if (data.signal.type === 'offer') {
+                    await pc.setRemoteDescription(data.signal);
+                    const answer = await pc.createAnswer();
+                    await pc.setLocalDescription(answer);
+                    socket.emit('signal', { to: senderId, signal: answer });
+                } else if (data.signal.candidate) {
+                    await pc.addIceCandidate(data.signal);
+                }
+            } catch (e) {
+                console.error("WebRTC Error:", e);
+            }
+        });
+        window.activatePiPMode = function (vesselName, senderId) {
+            const allWrappers = videoPanel.querySelectorAll('div[id^="wrapper-"]');
+            allWrappers.forEach(w => w.style.display = 'none');
+            const targetWrapper = document.getElementById(`wrapper-${senderId}`);
+            if (targetWrapper) {
+                targetWrapper.style.display = 'block';
+            }
+        };
+        window.closePiP = function () {
+            const allWrappers = videoPanel.querySelectorAll('div[id^="wrapper-"]');
+            allWrappers.forEach(w => w.style.display = 'none');
+        };
+    </script>
     <script>
         function toggleInfoPanel() {
             const infoPanel = document.querySelector('.info-panel');
-            const overlay = document.querySelector('.overlay');
             const wasActive = infoPanel && infoPanel.classList.contains('active');
             closeAllPanels();
             if (infoPanel && !wasActive) {
                 infoPanel.classList.add('active');
-                if (overlay) overlay.classList.add('active');
             }
         }
         function toggleLayerPanel() {
             const layerPanel = document.querySelector('.layer-panel');
-            const overlay = document.querySelector('.overlay');
             const wasActive = layerPanel && layerPanel.classList.contains('active');
             closeAllPanels();
             if (layerPanel && !wasActive) {
                 layerPanel.classList.add('active');
-                if (overlay) overlay.classList.add('active');
             }
         }
         function toggleSearchPanel() {
             const searchPanel = document.querySelector('.search-panel');
-            const overlay = document.querySelector('.overlay');
             const wasActive = searchPanel && searchPanel.classList.contains('active');
             closeAllPanels();
             if (searchPanel && !wasActive) {
                 searchPanel.classList.add('active');
-                if (overlay) overlay.classList.add('active');
             }
         }
         function toggleCreatePanel() {
             const createPanel = document.querySelector('.create-panel');
-            const overlay = document.querySelector('.overlay');
             const wasActive = createPanel && createPanel.classList.contains('active');
             closeAllPanels();
             if (createPanel && !wasActive) {
                 createPanel.classList.add('active');
-                if (overlay) overlay.classList.add('active');
             }
         }
         function closeAllPanels() {
@@ -940,12 +1027,7 @@
             if (createPanel) createPanel.classList.remove('active');
             if (overlay) overlay.classList.remove('active');
         }
-        const overlayElement = document.querySelector('.overlay');
-        if (overlayElement) {
-            overlayElement.addEventListener('click', closeAllPanels);
-        }
     </script>
-    <div class="overlay"></div>
     <div class="info-panel">
         <div class="header-info-panel">
             <button class="close_icon" style="font-size: 20px;" onclick="toggleInfoPanel()"></button>
@@ -1302,7 +1384,6 @@
             </script>
         </div>
     </div>
-    <div class="overlay"></div>
     <div class="layer-panel">
         <div class="header-layer-panel">
             <button class="close_icon" style="font-size: 20px;" onclick="toggleLayerPanel()"></button>
@@ -1405,56 +1486,8 @@
                     </div>
                 </div>
             </div>
-            <hr>
-            <div class="social-links">
-                <input type="hidden" id="streamUrl" value="rtmp://a.rtmp.youtube.com/live2/rv7y-2ezd-cgwy-3u2t-det0">
-                <button id="toggleBtnd" onclick="toggleStream()"
-                    style="width: 100%; padding: 12px; color: white; border: none; border-radius: 4px; font-weight: bold; cursor: pointer;">
-                    START STREAMING
-                </button>
-                <div id="streamStatus" style="display: none;">Status: Ready</div>
-                <script>
-                    let isStreaming = false;
-                    function toggleStream() {
-                        const btn = document.getElementById('toggleBtnd');
-                        const url = document.getElementById('streamUrl').value;
-                        const statusDiv = document.getElementById('streamStatus');
-                        if (!isStreaming) {
-                            if (url && window.Android) {
-                                statusDiv.innerText = "Status: Initializing...";
-                                window.Android.startStreaming(url);
-                                btn.innerText = "STOP STREAMING";
-                                btn.style.backgroundColor = "#dc3545";
-                                isStreaming = true;
-                            } else {
-                                alert("URL is empty or App Interface missing.");
-                            }
-                        } else {
-                            if (window.Android) window.Android.stopStreaming();
-                            btn.innerText = "START STREAMING";
-                            btn.style.backgroundColor = "#28a745";
-                            isStreaming = false;
-                        }
-                    }
-                    function updateStreamStatus(status) {
-                        document.getElementById('streamStatus').innerText = status;
-                        if (status.includes("Failed") || status.includes("Disconnected") || status.includes("Stopped") || status.includes("Error")) {
-                            const btn = document.getElementById('toggleBtnd');
-                            btn.innerText = "START STREAMING";
-                            btn.style.backgroundColor = "#28a745";
-                            isStreaming = false;
-                        } else if (status.includes("Live")) {
-                            const btn = document.getElementById('toggleBtnd');
-                            btn.innerText = "STOP STREAMING";
-                            btn.style.backgroundColor = "#dc3545";
-                            isStreaming = true;
-                        }
-                    }
-                </script>
-            </div>
         </div>
     </div>
-    <div class="overlay"></div>
     <div class="search-panel">
         <div class="header-search-panel">
             <button class="close_icon" style="font-size: 20px;" onclick="toggleSearchPanel()"></button>
@@ -1464,14 +1497,13 @@
             <div class="link-list"></div>
             <hr>
             <div class="blog-category_block">
-                <ul id="peer-list-container"></ul>
+                <ul id="device-list-container"></ul>
             </div>
             <div class="blog-category_block">
                 <ul id="report-routes-container"></ul>
             </div>
         </div>
     </div>
-    <div class="overlay"></div>
     <div class="create-panel">
         <div class="header-create-panel">
             <button class="close_icon" style="font-size: 20px;" onclick="toggleCreatePanel()"></button>
@@ -2185,7 +2217,7 @@
                         $item.insertBefore($readMoreBtn);
                     } else {
                         $list.append($item);
-                        var $newBtn = $('<a href="#" class="read-more-btn">ดูเพิ่มเติม</a>');
+                        var $newBtn = $('<a href="#" class="read-more-btn keep-open">ดูเพิ่มเติม</a>');
                         $newBtn.on('click', function (e) {
                             e.preventDefault();
                             $list.find('.extra-result')
@@ -2875,6 +2907,18 @@
             });
             const slider = document.getElementById('ui-hourly-container');
             let isDown = false; let startX; let scrollLeft;
+            const panels = document.querySelectorAll('.info-panel, .layer-panel, .search-panel, .create-panel');
+            panels.forEach(panel => {
+                panel.addEventListener('click', function (event) {
+                    const clickedItem = event.target.closest('a, button');
+                    if (clickedItem) {
+                        if (clickedItem.classList.contains('keep-open')) {
+                            return; // Do nothing, let the button do its normal job
+                        }
+                        closeAllPanels();
+                    }
+                });
+            });
         });
     </script>
 </body>

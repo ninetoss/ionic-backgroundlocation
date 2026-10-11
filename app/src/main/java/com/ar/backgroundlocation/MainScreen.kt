@@ -3,6 +3,7 @@ package com.ar.backgroundlocation
 import android.annotation.SuppressLint
 import android.graphics.Color
 import android.view.ViewGroup
+import android.widget.FrameLayout
 import android.webkit.PermissionRequest
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
@@ -15,7 +16,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
-import java.lang.ref.WeakReference
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
@@ -23,7 +23,19 @@ fun MainScreen(activity: MainActivity) {
     Box(modifier = Modifier.fillMaxSize()) {
         AndroidView(
             factory = { ctx ->
-                val webView = MainActivity.persistentWebView ?: WebView(ctx).apply {
+                val container = FrameLayout(ctx).apply {
+                    layoutParams = ViewGroup.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT
+                    )
+                }
+                
+                MainActivity.webViewContainer = container
+
+                val webView = MainActivity.persistentWebView ?: WebView(ctx.applicationContext).apply {
+                    MainActivity.persistentWebView = this
+                    addJavascriptInterface(activity.getAndroidInterface(), "Android")
+                    
                     layoutParams = ViewGroup.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.MATCH_PARENT
@@ -34,19 +46,8 @@ fun MainScreen(activity: MainActivity) {
                         cacheMode = WebSettings.LOAD_NO_CACHE
                         mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
                         mediaPlaybackRequiresUserGesture = false
-                        allowFileAccess = true
-                        allowContentAccess = true
-                        allowFileAccessFromFileURLs = true
-                        allowUniversalAccessFromFileURLs = true
                     }
-                    setBackgroundColor(Color.TRANSPARENT)
-
-                    // Enable debugging
-                    WebView.setWebContentsDebuggingEnabled(true)
-
-                    // Bind the interface
-                    addJavascriptInterface(activity.getAndroidInterface(), "Android")
-
+                    
                     webChromeClient = object : WebChromeClient() {
                         override fun onPermissionRequest(request: PermissionRequest?) {
                             request?.grant(request.resources)
@@ -84,39 +85,58 @@ fun MainScreen(activity: MainActivity) {
                         }
                     }
 
-                    try {
-                        val inputStream = ctx.assets.open("login.html")
-                        val size = inputStream.available()
-                        val buffer = ByteArray(size)
-                        inputStream.read(buffer)
-                        inputStream.close()
-                        val htmlContent = String(buffer)
-                        loadDataWithBaseURL("https://dntservicetruck.co.th/", htmlContent, "text/html", "UTF-8", null)
-                    } catch (e: Exception) {
-                        loadUrl("file:///android_asset/login.html")
+                    val prefs = ctx.getSharedPreferences("LocationAppPrefs", android.content.Context.MODE_PRIVATE)
+                    val savedUserId = prefs.getString("USER_ID", null)
+                    if (savedUserId != null) {
+                        val savedRole = prefs.getString("USER_ROLE", "sender") ?: "sender"
+                        val savedUsername = prefs.getString("USERNAME", "") ?: ""
+                        val savedName = prefs.getString("NAME", "") ?: ""
+                        val savedNumber = prefs.getString("NUMBER", "") ?: ""
+                        
+                        activity.getAndroidInterface().onLoginSuccess(
+                            savedUserId, savedRole, savedUsername, savedName, savedNumber, ""
+                        )
+                    } else {
+                        try {
+                            val inputStream = ctx.assets.open("login.html")
+                            val size = inputStream.available()
+                            val buffer = ByteArray(size)
+                            inputStream.read(buffer)
+                            inputStream.close()
+                            val htmlContent = String(buffer)
+                            loadDataWithBaseURL("https://dntservicetruck.co.th/", htmlContent, "text/html", "UTF-8", null)
+                        } catch (e: Exception) {
+                            loadUrl("file:///android_asset/login.html")
+                        }
                     }
                 }
                 
-                MainActivity.persistentWebView = webView
-                MainActivity.webViewRef = WeakReference(webView)
-                
-                // Critical: Ensure it's detached from ANY previous parent, 
-                // including the WindowManager overlay which is not a standard ViewGroup.
                 try {
                     val wm = ctx.getSystemService(android.content.Context.WINDOW_SERVICE) as android.view.WindowManager
                     wm.removeViewImmediate(webView)
-                } catch (e: Exception) {
-                    // Not attached to WindowManager or already removed
-                }
+                } catch (e: Exception) {}
                 (webView.parent as? ViewGroup)?.removeView(webView)
                 
-                webView
+                container.addView(webView)
+                container 
             },
             modifier = Modifier.fillMaxSize(),
-            update = { webView ->
-                // Ensure the webview stays active
-                webView.resumeTimers()
-                webView.onResume()
+            update = { container ->
+                val webView = MainActivity.persistentWebView
+                if (webView != null && webView.parent != container) {
+                    (webView.parent as? ViewGroup)?.removeView(webView)
+                    webView.layoutParams = ViewGroup.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT
+                    )
+                    container.addView(webView)
+                    
+                    webView.requestLayout()
+                    webView.invalidate()
+                }
+                
+                webView?.resumeTimers()
+                webView?.onResume()
             }
         )
     }

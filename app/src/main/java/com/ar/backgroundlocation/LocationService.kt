@@ -16,6 +16,7 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.util.Log
+import android.webkit.WebView
 import androidx.core.app.NotificationCompat
 import androidx.core.content.edit
 import org.json.JSONArray
@@ -36,13 +37,14 @@ class LocationService : Service(), LocationUpdatesCallBack {
     
     private val fileLock = Any()
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val executorService = java.util.concurrent.Executors.newSingleThreadExecutor()
 
     private var currentUserId: String = "0"
     private var currentNumber: String = "0"
+    private var currentName: String = "0"
 
-    private var isTracking = false 
     private var lastFetchTime: Long = 0
-    private var lastWfsFetchTime: Long = 0
+    private var lastNotificationTime: Long = 0
 
     override fun onCreate() {
         super.onCreate()
@@ -55,6 +57,7 @@ class LocationService : Service(), LocationUpdatesCallBack {
         val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
         currentUserId = prefs.getString(KEY_USER_ID, "0") ?: "0"
         currentNumber = prefs.getString(KEY_NUMBER, "0") ?: "0"
+        currentName = prefs.getString(KEY_NAME, "0") ?: "0"
         
         notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
     }
@@ -98,11 +101,76 @@ class LocationService : Service(), LocationUpdatesCallBack {
             val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
             prefs.edit { putString(KEY_NUMBER, number) }
         }
+        val name = intent?.getStringExtra("NAME")
+        if (name != null) {
+            currentName = name
+            val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+            prefs.edit { putString(KEY_NAME, name) }
+        }
         when (intent?.action) {
             ACTION_START -> startService()
             ACTION_STOP -> stopService()
+            ACTION_START_WEBRTC -> startWebRTC()
+            ACTION_STOP_WEBRTC -> stopWebRTC()
+            ACTION_START_BROADCAST -> startBroadcast()
+            ACTION_STOP_BROADCAST -> stopBroadcast()
+            ACTION_SET_SIMULATION_MODE -> {
+                isSimulatedMode = intent.getBooleanExtra("IS_SIMULATED", false)
+                if (isSimulatedMode) {
+                    updateNotification("Simulating Patrol Boat", "Patrol boat simulation active")
+                } else {
+                    if (isTracking) {
+                        val currentStatusTitle = when {
+                            isBroadcasting -> "Broadcast Active"
+                            isWebRTCActive -> "Streaming Active"
+                            else -> "Tracking location..."
+                        }
+                        updateNotification(currentStatusTitle, "Searching...")
+                    } else if (!isWebRTCActive && !isBroadcasting) {
+                        stopForeground(STOP_FOREGROUND_REMOVE)
+                        stopSelf()
+                    }
+                }
+            }
+            ACTION_UPDATE_SIMULATED_LOCATION -> {
+                val lat = intent.getDoubleExtra("LAT", 0.0)
+                val lng = intent.getDoubleExtra("LNG", 0.0)
+                val bearing = intent.getDoubleExtra("HEADING", 0.0)
+                val speed = intent.getDoubleExtra("SPEED", 0.0)
+
+                if (isSimulatedMode) {
+                    updateNotification("Simulating Patrol Boat", "Lat: ${String.format("%.4f", lat)}, Lng: ${String.format("%.4f", lng)}")
+                }
+
+                if (System.currentTimeMillis() - lastSimulatedSendTime >= 3000) {
+                    lastSimulatedSendTime = System.currentTimeMillis()
+                    
+                    val simLoc = Location("simulated").apply {
+                        latitude = lat
+                        longitude = lng
+                        this.bearing = bearing.toFloat()
+                        this.speed = speed.toFloat()
+                        time = System.currentTimeMillis()
+                    }
+                    
+                    val userId = currentUserId
+                    val number = currentNumber
+                    val name = currentName
+                    
+                    if (isNetworkAvailable()) {
+                        sendLocationToServer(simLoc, userId, number, name)
+                    } else {
+                        saveLocationToInternalStorage(simLoc, userId, number, name)
+                    }
+                }
+            }
         }
         return START_STICKY
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        super.onTaskRemoved(rootIntent)
+        stopService()
     }
 
     override fun onBind(p0: Intent?): IBinder? {
@@ -110,11 +178,23 @@ class LocationService : Service(), LocationUpdatesCallBack {
     }
 
     companion object {
+        var isTracking = false
+        var isWebRTCActive = false
+        var isBroadcasting = false
+        var isSimulatedMode = false
+        var lastSimulatedSendTime = 0L
         const val ACTION_START = "ACTION_START"
         const val ACTION_STOP = "ACTION_STOP"
+        const val ACTION_START_WEBRTC = "ACTION_START_WEBRTC"
+        const val ACTION_STOP_WEBRTC = "ACTION_STOP_WEBRTC"
+        const val ACTION_START_BROADCAST = "ACTION_START_BROADCAST"
+        const val ACTION_STOP_BROADCAST = "ACTION_STOP_BROADCAST"
+        const val ACTION_SET_SIMULATION_MODE = "ACTION_SET_SIMULATION_MODE"
+        const val ACTION_UPDATE_SIMULATED_LOCATION = "ACTION_UPDATE_SIMULATED_LOCATION"
         private const val PREFS_NAME = "LocationPrefs"
         private const val KEY_USER_ID = "UserId"
         private const val KEY_NUMBER = "Number"
+        private const val KEY_NAME = "Name"
         private const val OFFLINE_FILE = "offline_locations.json"
     }
 
@@ -125,15 +205,104 @@ class LocationService : Service(), LocationUpdatesCallBack {
         gpsLocationClient.startLocationUpdates()
         sendStatusToServer("online")
         
+        updateNotification("Tracking location...", "Searching...")
+    }
+
+    private fun startWebRTC() {
+        isWebRTCActive = true
+        MainActivity.isWebRTCActive = true
+
+        updateNotification("Streaming Active", "Video/Audio transmission running in background")
+
+        val notification = createNotification("Streaming Active", "Video/Audio transmission running in background")
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            var type = ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA or
+                       ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+            if (isTracking) {
+                type = type or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+            }
+            startForeground(1, notification, type)
+        } else {
+            startForeground(1, notification)
+        }
+    }
+
+    private fun stopWebRTC() {
+        isWebRTCActive = false
+        MainActivity.isWebRTCActive = false
+
+        if (isTracking || isBroadcasting) {
+            updateNotification(
+                if (isBroadcasting) "Broadcast Active" else "Tracking location...",
+                if (isBroadcasting) "Sending audio commands..." else "Running..."
+            )
+        } else {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+        }
+    }
+
+    private fun startBroadcast() {
+        isBroadcasting = true
+        updateNotification("Broadcast Active", "Sending audio commands to all users")
+
+        val notification = createNotification("Broadcast Active", "Sending audio commands to all users")
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            var type = ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+            if (isTracking) type = type or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+            if (isWebRTCActive) {
+                type = type or ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+            }
+            startForeground(1, notification, type)
+        } else {
+            startForeground(1, notification)
+        }
+    }
+
+    private fun stopBroadcast() {
+        isBroadcasting = false
+        if (isTracking || isWebRTCActive) {
+            updateNotification(
+                if (isWebRTCActive) "Streaming Active" else "Tracking location...",
+                if (isWebRTCActive) "Video/Audio transmission running..." else "Running..."
+            )
+        } else {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+        }
+    }
+
+    private fun updateNotification(title: String, content: String) {
+        if (notificationManager == null) return
+        
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 "location",
                 "Location",
-                NotificationManager.IMPORTANCE_DEFAULT
+                NotificationManager.IMPORTANCE_LOW
             )
             notificationManager?.createNotificationChannel(channel)
         }
 
+        val notification = createNotification(title, content)
+        
+        val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            var t = 0
+            if (isTracking || isSimulatedMode) t = t or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+            if (isWebRTCActive) t = t or ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+            if (isBroadcasting) t = t or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+            if (t == 0) t = ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+            t
+        } else 0
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && type != 0) {
+            startForeground(1, notification, type)
+        } else {
+            startForeground(1, notification)
+        }
+    }
+
+    private fun createNotification(title: String, content: String): android.app.Notification {
         val notificationIntent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP 
         }
@@ -147,27 +316,22 @@ class LocationService : Service(), LocationUpdatesCallBack {
             pendingIntentFlags
         )
 
-        val builder = NotificationCompat.Builder(this, "location")
-            .setContentTitle("Tracking location...")
-            .setContentText("Searching...")
+        notificationBuilder = NotificationCompat.Builder(this, "location")
+            .setContentTitle(title)
+            .setContentText(content)
             .setSmallIcon(R.drawable.ic_launcher_background)
-            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
             .setOngoing(true)
             .setContentIntent(pendingIntent)
-            
-        notificationBuilder = builder
-        val notification = builder.build()
-        
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(1, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
-        } else {
-            startForeground(1, notification)
-        }
+
+        return notificationBuilder!!.build()
     }
 
     private fun stopService() {
-        if (!isTracking) return
+        if (!isTracking && !isWebRTCActive) return
         isTracking = false
+        isWebRTCActive = false
+        MainActivity.isWebRTCActive = false
         
         gpsLocationClient.stopLocationUpdates()
         gpsLocationClient.setLocationUpdatesCallBack(null)
@@ -184,7 +348,7 @@ class LocationService : Service(), LocationUpdatesCallBack {
         val userId = currentUserId
         if (userId == "0" || userId.isEmpty()) return
 
-        Thread {
+        executorService.execute {
             try {
                 val url = URL("https://dntservicetruck.co.th/locationservice.php")
                 val conn = url.openConnection() as HttpURLConnection
@@ -200,11 +364,11 @@ class LocationService : Service(), LocationUpdatesCallBack {
             } catch (e: Exception) {
                 Log.e(TAG, "Send status failed", e)
             }
-        }.start()
+        }
     }
 
     private fun fetchLocationFromServer() {
-        Thread {
+        executorService.execute {
             try {
                 val url = URL("https://dntservicetruck.co.th/location.json")
                 val conn = url.openConnection() as HttpURLConnection
@@ -234,7 +398,9 @@ class LocationService : Service(), LocationUpdatesCallBack {
                         if (userId.isNotEmpty()) {
                             activeUserIds.put(userId)
                             
-                            val js = "receiveServerLocation('$userId', '$number', '$name', '$type', '$unitName', $lat, $lng, $bearing, $speed);"
+                            val safeName = name.replace("'", "\\'")
+                            val safeUnitName = unitName.replace("'", "\\'")
+                            val js = "if(typeof receiveServerLocation === 'function') { receiveServerLocation('$userId', '$number', '$safeName', '$type', '$safeUnitName', $lat, $lng, $bearing, $speed); }"
                             MainActivity.persistentWebView?.let { webView ->
                                 mainHandler.post {
                                     webView.evaluateJavascript(js, null)
@@ -243,7 +409,8 @@ class LocationService : Service(), LocationUpdatesCallBack {
                         }
                     }
 
-                    val purgeJs = "if(typeof purgeOfflineServerLocations === 'function') { purgeOfflineServerLocations('${activeUserIds}'); }"
+                    val safeActiveUserIds = activeUserIds.toString().replace("'", "\\'")
+                    val purgeJs = "if(typeof purgeOfflineServerLocations === 'function') { purgeOfflineServerLocations('$safeActiveUserIds'); }"
                     MainActivity.persistentWebView?.let { webView ->
                         mainHandler.post {
                             webView.evaluateJavascript(purgeJs, null)
@@ -254,11 +421,11 @@ class LocationService : Service(), LocationUpdatesCallBack {
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to fetch server locations", e)
             }
-        }.start()
+        }
     }
 
     private fun fetchInactiveShipsFromServer() {
-        Thread {
+        executorService.execute {
             try {
                 val url = URL("https://dntservicetruck.co.th/geolocation.json")
                 val conn = url.openConnection() as HttpURLConnection
@@ -271,9 +438,7 @@ class LocationService : Service(), LocationUpdatesCallBack {
                     val jsonObject = JSONObject(downloadedJsonText)
                     val featuresArray = jsonObject.optJSONArray("features") ?: JSONArray()
                     
-                    // --- NEW: Track who is currently offline ---
                     val inactiveNames = JSONArray()
-                    // -------------------------------------------
 
                     for (i in 0 until featuresArray.length()) {
                         val feature = featuresArray.getJSONObject(i)
@@ -285,10 +450,10 @@ class LocationService : Service(), LocationUpdatesCallBack {
                         val lng = coordinates.getDouble(0)
                         val lat = coordinates.getDouble(1)
                         
-                        // Add to our list
                         inactiveNames.put(shipName)
 
-                        val js = "receiveInactiveLocation('$shipName', '$shipNumber', $lat, $lng);"
+                        val safeShipName = shipName.replace("'", "\\'")
+                        val js = "if(typeof receiveInactiveLocation === 'function') { receiveInactiveLocation('$safeShipName', '$shipNumber', $lat, $lng); }"
                         MainActivity.persistentWebView?.let { webView ->
                             mainHandler.post {
                                 webView.evaluateJavascript(js, null)
@@ -296,31 +461,51 @@ class LocationService : Service(), LocationUpdatesCallBack {
                         }
                     }
                     
-                    // --- NEW: Send the offline list to the map for Garbage Collection ---
-                    val purgeJs = "if(typeof purgeInactiveLocations === 'function') { purgeInactiveLocations('${inactiveNames.toString()}'); }"
+                    val safeInactiveNames = inactiveNames.toString().replace("'", "\\'")
+                    val purgeJs = "if(typeof purgeInactiveLocations === 'function') { purgeInactiveLocations('$safeInactiveNames'); }"
                     MainActivity.persistentWebView?.let { webView ->
                         mainHandler.post {
                             webView.evaluateJavascript(purgeJs, null)
                         }
                     }
-                    // --------------------------------------------------------------------
                 }
                 conn.disconnect()
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to fetch inactive locations", e)
             }
-        }.start()
+        }
     }
 
     override fun onLocationUpdate(location: Location) {
+        if (isSimulatedMode) return
+        
         val userId = currentUserId
         val number = currentNumber
+        val name = currentName
 
-        notificationBuilder?.setContentText("${userId}: ${location.latitude}, ${location.longitude}")?.build()?.let { builtNotification ->
-            notificationManager?.notify(1, builtNotification)
+        // DYNAMIC STATUS UPDATE: 
+        // Checks the active state flags to ensure the title always accurately reflects what's running.
+        val currentStatusTitle = when {
+            isBroadcasting -> "Broadcast Active"
+            isWebRTCActive -> "Streaming Active"
+            else -> "Tracking location..."
         }
 
-        val js = "receiveServiceLocation('${userId}', '${number}', ${location.latitude}, ${location.longitude}, ${location.bearing}, ${location.speed})"
+        // Update the title with the correct state, and the text with the latest coordinates
+        val currentTimeMillis = System.currentTimeMillis()
+        if (currentTimeMillis - lastNotificationTime >= 10000) {
+            lastNotificationTime = currentTimeMillis
+            notificationBuilder?.setContentTitle(currentStatusTitle)
+            notificationBuilder?.setContentText("Lat: ${location.latitude}, Lng: ${location.longitude}")
+            
+            notificationBuilder?.build()?.let { builtNotification ->
+                notificationManager?.notify(1, builtNotification)
+            }
+        }
+
+        val speedInKnots = location.speed * 1.943844f
+        val safeName = name.replace("'", "\\'")
+        val js = "if(typeof receiveServiceLocation === 'function') { receiveServiceLocation('${userId}', '${number}', '${safeName}', ${location.latitude}, ${location.longitude}, ${location.bearing}, ${speedInKnots}); }"
         MainActivity.persistentWebView?.let { webView ->
             mainHandler.post {
                 webView.evaluateJavascript(js, null)
@@ -328,9 +513,9 @@ class LocationService : Service(), LocationUpdatesCallBack {
         }
 
         if (isNetworkAvailable()) {
-            sendLocationToServer(location, userId, number)
+            sendLocationToServer(location, userId, number, name)
         } else {
-            saveLocationToInternalStorage(location, userId, number)
+            saveLocationToInternalStorage(location, userId, number, name)
         }
 
         val currentTime = System.currentTimeMillis()
@@ -350,8 +535,8 @@ class LocationService : Service(), LocationUpdatesCallBack {
         return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
     }
 
-    private fun sendLocationToServer(location: Location, userId: String, number: String) {
-        Thread {
+    private fun sendLocationToServer(location: Location, userId: String, number: String, name: String) {
+        executorService.execute {
             try {
                 val url = URL("https://dntservicetruck.co.th/locationservice.php")
                 val conn = url.openConnection() as HttpURLConnection
@@ -361,10 +546,11 @@ class LocationService : Service(), LocationUpdatesCallBack {
                 val postData =
                     "UserId=${userId}" +
                     "&Number=${number}" +
+                    "&Name=${name}" +
                     "&lat=${location.latitude}" +
                     "&lng=${location.longitude}" +
                     "&bearing=${location.bearing}" +
-                    "&speed=${location.speed}" +
+                    "&speed=${location.speed * 1.943844f}" +
                     "&status=online" +
                     "&timestamp=${System.currentTimeMillis()}"
                 conn.outputStream.use { it.write(postData.toByteArray()) }
@@ -372,31 +558,26 @@ class LocationService : Service(), LocationUpdatesCallBack {
                 conn.disconnect()
             } catch (e: Exception) {
                 Log.e(TAG, "Send location failed, saving for later", e)
-                saveLocationToInternalStorage(location, userId, number)
+                saveLocationToInternalStorage(location, userId, number, name)
             }
-        }.start()
+        }
     }
 
-    private fun saveLocationToInternalStorage(location: Location, userId: String, number: String) {
+    private fun saveLocationToInternalStorage(location: Location, userId: String, number: String, name: String) {
         synchronized(fileLock) {
             try {
                 val file = File(filesDir, OFFLINE_FILE)
-                val jsonArray = if (file.exists()) {
-                    JSONArray(file.readText())
-                } else {
-                    JSONArray()
-                }
-
                 val locationJson = JSONObject().apply {
                     put("UserId", userId)
                     put("Number", number)
+                    put("Name", name)
                     put("lat", location.latitude)
                     put("lng", location.longitude)
                     put("bearing", location.bearing)
-                    put("speed", location.speed)
+                    put("speed", location.speed * 1.943844f)
                     put("timestamp", System.currentTimeMillis())
                 }
-                jsonArray.put(locationJson)
+                val jsonArray = JSONArray().apply { put(locationJson) }
                 file.writeText(jsonArray.toString())
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to save location offline", e)
@@ -405,24 +586,46 @@ class LocationService : Service(), LocationUpdatesCallBack {
     }
 
     private fun syncStoredData() {
-        Thread {
+        executorService.execute {
             synchronized(fileLock) {
                 val file = File(filesDir, OFFLINE_FILE)
-                if (!file.exists()) return@Thread
+                if (!file.exists()) return@execute
 
                 try {
                     val jsonArray = JSONArray(file.readText())
-                    if (jsonArray.length() == 0) return@Thread
+                    if (jsonArray.length() == 0) return@execute
 
-                    Log.d(TAG, "Syncing ${jsonArray.length()} stored locations...")
+                    Log.d(TAG, "Syncing latest location from ${jsonArray.length()} stored locations...")
+
+                    // Get only the most recent location from the array
+                    val lastLocation = jsonArray.getJSONObject(jsonArray.length() - 1)
+                    val userId = lastLocation.optString("UserId")
+                    val number = lastLocation.optString("Number")
+                    val name = lastLocation.optString("Name")
+                    val lat = lastLocation.optDouble("lat", 0.0)
+                    val lng = lastLocation.optDouble("lng", 0.0)
+                    val bearing = lastLocation.optDouble("bearing", 0.0)
+                    val speed = lastLocation.optDouble("speed", 0.0)
+                    val timestamp = lastLocation.optLong("timestamp", System.currentTimeMillis())
 
                     val url = URL("https://dntservicetruck.co.th/locationservice.php")
                     val conn = url.openConnection() as HttpURLConnection
                     conn.requestMethod = "POST"
                     conn.doOutput = true
-                    conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8")
+                    conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8")
 
-                    conn.outputStream.use { it.write(jsonArray.toString().toByteArray()) }
+                    val postData =
+                        "UserId=${userId}" +
+                        "&Number=${number}" +
+                        "&Name=${name}" +
+                        "&lat=${lat}" +
+                        "&lng=${lng}" +
+                        "&bearing=${bearing}" +
+                        "&speed=${speed}" +
+                        "&status=online" +
+                        "&timestamp=${timestamp}"
+
+                    conn.outputStream.use { it.write(postData.toByteArray()) }
 
                     if (conn.responseCode == HttpURLConnection.HTTP_OK) {
                         Log.d(TAG, "Bulk sync successful")
@@ -435,6 +638,6 @@ class LocationService : Service(), LocationUpdatesCallBack {
                     Log.e(TAG, "Error during sync", e)
                 }
             }
-        }.start()
+        }
     }
 }

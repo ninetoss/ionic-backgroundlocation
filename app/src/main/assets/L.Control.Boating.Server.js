@@ -4,6 +4,8 @@ L.Control.Boating = L.Control.extend({
         legendPosition: 'topright',
         boatColor: '#3388ff',      // Color for "Me"
         peerColor: '#ff8833',      // New: Color for other users
+        fleetUrl: 'location.json',
+        offlineUrl: 'geolocation.json', // Path to offline GeoJSON
         lineColor1: 'transparent',
         lineColor2: 'transparent',
         circleColor: '#3388ff',
@@ -13,6 +15,15 @@ L.Control.Boating = L.Control.extend({
     onAdd: function (map) {
         this.peers = {};           // Store other users here
         this.myMotionCache = [];   // Store smoothing data for "Me" here
+        map.on('rotate moveend', function () {
+            let b = (map && map.getBearing) ? map.getBearing() : 0;
+            if (typeof window.updateAllBoatMarkersRotation === 'function') {
+                window.updateAllBoatMarkersRotation(b);
+            }
+            if (typeof window.updatePolylineMeasureArrowsRotation === 'function') {
+                window.updatePolylineMeasureArrowsRotation(b);
+            }
+        });
         const container = L.DomUtil.create('div', 'leaflet-bar leaflet-control')
         const link = L.DomUtil.create('a', 'leaflet-bar-part leaflet-bar-part-single', container)
         this.icon = L.DomUtil.create('span', 'leaflet-control-boating-arrow', link)
@@ -28,13 +39,13 @@ L.Control.Boating = L.Control.extend({
             lineColor2: this.options.lineColor2
         })
         this.legend.onAdd = function (map) {
-            const container = L.DomUtil.create('div', 'leaflet-control leaflet-bar leaflet-control-boating-legend')
+            const container = L.DomUtil.create('div', 'leaflet-control leaflet-bar leaflet-control-boating-legend');
             container.innerHTML = `
             <div id="weather-sidebar-widget-item" style="align-items: center;">
-                <div id="dashboard_container">
+                <div id="boat_dashboard_container">
                     <div class="detail-item-rigth">
                         <div class="detail-label">
-                            <span class="current-condition-text" id="boatName"></span>
+                            <span class="f-temp-sm" id="boatName"></span>
                         </div>
                         <div class="detail-label">
                             <span class="current-condition-text">TOTAL TIME</span>
@@ -91,19 +102,92 @@ L.Control.Boating = L.Control.extend({
                         </div>
                     </div>
                 </div>
-            </div>`
-            this.boatName = container.querySelector('#boatName')
-            this.heading = container.querySelector('#heading')
-            this.knots = container.querySelector('#knots')
-            this.timeElapsed = container.querySelector('#timeElapsed')
-            this.totalDist = container.querySelector('#totalDist')
-            return container
-        }
+                <div id="pier_dashboard_container" style="display: none;">
+                    <div class="detail-item-rigth">
+                        <div class="detail-label">
+                            <span class="f-temp-sm" id="pierName"></span>
+                        </div>
+                        <div class="detail-label">
+                            <span class="current-condition-text">PROVINCE</span>
+                        </div>
+                        <div class="detail-value flex-center">
+                            <div class="detail-item">
+                                <div class="detail-value flex-center">
+                                    <div class="current-condition-value">
+                                        <span id="pierProvince"></span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="detail-label">
+                            <span class="current-condition-text">PIER TYPE</span>
+                        </div>
+                        <div class="detail-value flex-center">
+                            <div class="detail-item">
+                                <div class="detail-value flex-center">
+                                    <div class="current-condition-value">
+                                        <span id="pierType"></span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="detail-label">
+                            <span class="current-condition-text">COORDINATES</span>
+                        </div>
+                        <div class="detail-value flex-center">
+                            <div class="detail-item">
+                                <div class="detail-value flex-center">
+                                    <div class="current-condition-value">
+                                        <span id="pierCoords"></span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>`;
+            this.boatName = container.querySelector('#boatName');
+            this.heading = container.querySelector('#heading');
+            this.knots = container.querySelector('#knots');
+            this.timeElapsed = container.querySelector('#timeElapsed');
+            this.totalDist = container.querySelector('#totalDist');
+            this.totalBoatTo = container.querySelector('#totalBoatTo');
+            this.boatToContainer = container.querySelector('#boatToContainer');
+            this.obstacleWarningContainer = container.querySelector('#obstacleWarningContainer');
+            this.obstacleDist = container.querySelector('#obstacleDist');
+            this._boatDashboard = container.querySelector('#boat_dashboard_container');
+            this._pierDashboard = container.querySelector('#pier_dashboard_container');
+            this._pierName = container.querySelector('#pierName');
+            this._pierProvince = container.querySelector('#pierProvince');
+            this._pierType = container.querySelector('#pierType');
+            this._pierCoords = container.querySelector('#pierCoords');
+            return container;
+        };
+        this.legend.updatePierData = function (name, province, pierType, lat, lng) {
+            if (this._boatDashboard) this._boatDashboard.style.display = 'none';
+            if (this._pierDashboard) this._pierDashboard.style.display = 'block';
+            if (this._pierName) this._pierName.innerText = name || '-';
+            if (this._pierProvince) this._pierProvince.innerText = province || '-';
+            if (this._pierType) this._pierType.innerText = pierType || '-';
+            if (this._pierCoords) {
+                let parsedLat = parseFloat(lat);
+                let parsedLng = parseFloat(lng);
+                if (!isNaN(parsedLat) && !isNaN(parsedLng)) {
+                    let latStr = Math.abs(parsedLat).toFixed(5) + (parsedLat >= 0 ? '°N' : '°S');
+                    let lngStr = Math.abs(parsedLng).toFixed(5) + (parsedLng >= 0 ? '°E' : '°W');
+                    this._pierCoords.innerText = `${latStr}, ${lngStr}`;
+                } else {
+                    this._pierCoords.innerText = '-';
+                }
+            } else {
+                console.warn("ไม่พบ Element id='pierCoords' ใน HTML"); // แจ้งเตือนใน Console ถ้ายึดตัวแปรไม่สำเร็จ
+            }
+        };
         this.boat = this.createBoatMarker(this.options.boatColor);
         this.circle = L.circle([0, 0], { color: this.options.circleColor, stroke: false })
         this.line = L.polyline([[0, 0], [0, 0]], { color: this.options.lineColor2, lineCap: 'square' })
         this.linebg = L.polyline([[0, 0], [0, 0]], { color: this.options.lineColor1 })
-        this.track = L.polyline([], { color: '#3388ff', weight: 3 })
+        this.track = L.polyline([], { color: 'transparent', weight: 3 })
         this.viewedRouteLayer = L.polyline([], { color: '#3388ff', weight: 3 });
         setTimeout(() => this.updateRouteList(), 500);
         return container
@@ -134,15 +218,23 @@ L.Control.Boating = L.Control.extend({
         if (window.activeSearchTrack && window.activeSearchTrack.name) {
             if (this.isFollowing()) {
                 if (window.activeSearchTrack.session) this.saveRoute(window.activeSearchTrack.session);
-                if (this._map.hasLayer(window.activeSearchTrack.line)) this._map.removeLayer(window.activeSearchTrack.line);
-                if (this._map.hasLayer(window.activeSearchTrack.circle)) this._map.removeLayer(window.activeSearchTrack.circle);
+                if (window.activeSearchTrack.line && this._map.hasLayer(window.activeSearchTrack.line)) this._map.removeLayer(window.activeSearchTrack.line);
+                if (window.activeSearchTrack.circle && this._map.hasLayer(window.activeSearchTrack.circle)) this._map.removeLayer(window.activeSearchTrack.circle);
                 window.activeSearchTrack.name = null;
                 window.activeSearchTrack.session = null;
-                this.icon.classList.remove('following', 'requesting', 'locating');
-                this._map.removeControl(this.legend);
-                this.stopStopwatch();
+                this.stop();
+                const cm = document.querySelector('.create-minimap');
+                if (cm) cm.classList.remove('active');
             } else {
-                this._map.panTo(window.activeSearchTrack.session.lastLatLng);
+                let targetLL = null;
+                if (window.activeSearchTrack.session && window.activeSearchTrack.session.lastLatLng) {
+                    targetLL = window.activeSearchTrack.session.lastLatLng;
+                } else if (window.activeSearchTrack.layer && typeof window.activeSearchTrack.layer.getLatLng === 'function') {
+                    targetLL = window.activeSearchTrack.layer.getLatLng();
+                }
+                if (targetLL && this._map && typeof this._map.panTo === 'function') {
+                    this._map.panTo(targetLL);
+                }
                 this.follow();
             }
             return;
@@ -151,12 +243,9 @@ L.Control.Boating = L.Control.extend({
             if (this.isFollowing()) {
                 this.saveRoute(this.sessionData);
                 this.followedPeerId = null;
-                this.sessionData = null;
-                if (this._map.hasLayer(this.track)) this._map.removeLayer(this.track);
-                if (this._map.hasLayer(this.circle)) this._map.removeLayer(this.circle);
-                this.icon.classList.remove('following', 'requesting', 'locating');
-                this._map.removeControl(this.legend);
-                this.stopStopwatch();
+                this.stop();
+                const cd = document.querySelector('.create-display');
+                if (cd) cd.classList.remove('active');
             } else {
                 this._map.panTo(this.sessionData.lastLatLng);
                 this.follow();
@@ -177,7 +266,7 @@ L.Control.Boating = L.Control.extend({
         this._map.on('locationfound', this.onLocationFound, this)
         this._map.on('locationerror', this.onLocationError, this)
         this._map.on('zoomend', this.updateSizes, this)
-        this._map.locate({ watch: true, enableHighAccuracy: true })
+        this._map.locate({ watch: true, enableHighAccuracy: true, timeout: 60000, maximumAge: 0 })
         this.icon.classList.remove('following')
         this.icon.classList.remove('locating')
         this.icon.classList.add('requesting')
@@ -189,14 +278,31 @@ L.Control.Boating = L.Control.extend({
         this.myLastLatLng = null;
     },
     stop: function () {
-        this._map.stopLocate()
-        this._map.off('moveend', this.onMoveEnd, this)
-        this._map.off('dragstart', this.onDragStart, this)
-        this._map.off('locationfound', this.onLocationFound, this)
-        this._map.off('locationerror', this.onLocationError, this)
-        this._map.off('zoomend', this.updateSizes, this) // <-- Add this line
-        this._map.options.scrollWheelZoom = true
-        this._map.options.doubleClickZoom = true
+        window.activePatrolRoute = null;
+        if (window.simTrackingLine && this._map && this._map.hasLayer(window.simTrackingLine)) {
+            this._map.removeLayer(window.simTrackingLine);
+            window.simTrackingLine = null;
+        }
+        if (this.legend && this.legend.obstacleWarningContainer) {
+            this.legend.obstacleWarningContainer.style.display = 'none';
+        }
+        if (window.followSimulation) {
+            if (window.followSimulation.interval) clearInterval(window.followSimulation.interval);
+            if (window.followSimulation.data) {
+                window.followSimulation.data.speed = 0;
+                let speedInput = document.getElementById('follow-speed');
+                if (speedInput) speedInput.value = "0";
+            }
+            window.followSimulation = null;
+        }
+        if (this._map) this._map.stopLocate()
+        if (this._map) this._map.off('moveend', this.onMoveEnd, this)
+        if (this._map) this._map.off('dragstart', this.onDragStart, this)
+        if (this._map) this._map.off('locationfound', this.onLocationFound, this)
+        if (this._map) this._map.off('locationerror', this.onLocationError, this)
+        if (this._map) this._map.off('zoomend', this.updateSizes, this) // <-- Add this line
+        if (this._map) this._map.options.scrollWheelZoom = true
+        if (this._map) this._map.options.doubleClickZoom = true
         this.icon.classList.remove('requesting')
         this.icon.classList.remove('following')
         this.icon.classList.remove('locating')
@@ -255,10 +361,18 @@ L.Control.Boating = L.Control.extend({
             }
             this.inactiveMarkers = {}; // Reset the dictionary
         }
-        this.stopPolling();
+        if (typeof this.stopPolling === 'function') {
+            this.stopPolling();
+        }
         this.myStartTime = null;
         this.myTotalDistance = 0;
         this.myLastLatLng = null;
+        if (typeof this.stopStopwatch === 'function') {
+            this.stopStopwatch();
+        }
+        if (window.boatingControl && window.boatingControl._stopwatchTimer) {
+            clearInterval(window.boatingControl._stopwatchTimer);
+        }
     },
     onDragStart: function () {
         if (this.isFollowing()) {
@@ -389,9 +503,12 @@ L.Control.Boating = L.Control.extend({
             deleteBtn.style.fontSize = '14px';
             deleteBtn.innerHTML = '<i class="fa fa-trash" style="font-size: 20px; margin-right: 5px;"></i> ลบ';
             anchor.appendChild(deleteBtn);
-            li.appendChild(anchor);
             anchor.addEventListener('click', (e) => {
                 if (e.target === deleteBtn) return;
+                const searchIcon = document.querySelector('.search-panel-btn');
+                if (searchIcon) {
+                    searchIcon.classList.remove('active');
+                }
                 this.viewRoute(item);
             });
             deleteBtn.addEventListener('click', (e) => {
@@ -449,14 +566,16 @@ L.Control.Boating = L.Control.extend({
                 boatName: this.options.boatName || this.options.myBoatName || 'Me'
             };
             this._map.addControl(this.legend)
-            this._map.addLayer(this.circle)
-            this._map.addLayer(this.linebg)
-            this._map.addLayer(this.line)
             this._map.addLayer(this.boat)
-            this._map.addLayer(this.track)
+            if (!this.followedPeerId && !(window.activeSearchTrack && window.activeSearchTrack.name)) {
+                this._map.addLayer(this.circle)
+                this._map.addLayer(this.linebg)
+                this._map.addLayer(this.line)
+                this._map.addLayer(this.track)
+            }
             this.follow()
         }
-        if (!this.followedPeerId || this.followedPeerId === 'Me') {
+        if ((!this.followedPeerId || this.followedPeerId === 'Me') && !(window.activeSearchTrack && window.activeSearchTrack.name)) {
             if (this.isFollowing()) {
                 this._map.setView(e.latlng, 20);
             }
@@ -471,6 +590,11 @@ L.Control.Boating = L.Control.extend({
             this.updateCircle(e);
             this.updateLine(e);
             this.track.addLatLng(e.latlng);
+        } else {
+            if (this._map.hasLayer(this.circle)) this._map.removeLayer(this.circle);
+            if (this._map.hasLayer(this.linebg)) this._map.removeLayer(this.linebg);
+            if (this._map.hasLayer(this.line)) this._map.removeLayer(this.line);
+            if (this._map.hasLayer(this.track)) this._map.removeLayer(this.track);
         }
         this.updateBoat(this.boat, e)
         this.lastPosition = e
@@ -492,18 +616,48 @@ L.Control.Boating = L.Control.extend({
             speed: e.speed,
             heading: e.heading
         };
+        let isCameraActive = false;
+        let activeSenderId = userId;
+        const checkId = userId ? String(userId).toLowerCase() : "";
+        const cleanName = name ? String(name).toLowerCase().replace(/\s+/g, '') : "";
+        const cleanNum = number ? String(number).toLowerCase().replace(/\s+/g, '') : "";
+        const extractedNum = cleanName.replace(/\D/g, '');
+        if (window.activeCameras) {
+            for (let camKey in window.activeCameras) {
+                if (!camKey || camKey === "undefined" || camKey === "null") continue;
+                let webrtcId = window.activeCameras[camKey];
+                let cleanCam = camKey.toLowerCase().replace(/\s+/g, '');
+                if (!cleanCam) continue;
+                if (cleanName && cleanName === cleanCam) {
+                    isCameraActive = true; activeSenderId = webrtcId; break;
+                }
+                if (cleanNum && cleanNum === cleanCam) {
+                    isCameraActive = true; activeSenderId = webrtcId; break;
+                }
+                if (extractedNum.length > 0 && extractedNum === cleanCam) {
+                    isCameraActive = true; activeSenderId = webrtcId; break;
+                }
+                if (checkId === cleanCam || checkId.endsWith("." + cleanCam) || checkId.endsWith("_" + cleanCam)) {
+                    isCameraActive = true; activeSenderId = webrtcId; break;
+                }
+            }
+        }
         if (!this.peers[userId]) {
+            let mapBearing = (this._map && this._map.getBearing) ? this._map.getBearing() : 0;
+            let initialVisualHeading = ((e.heading || 0) + mapBearing + 360) % 360;
             const marker = L.marker(e.latlng, {
                 title: name || number || 'Unknown', // Used by propertyName: 'title'
                 speed: e.speed || 0,                // Used by your buildTip
                 heading: e.heading || 0,            // Used by your click event
                 boatType: type || 'Unknown',        // Used by your click event
-                boatLabel: '../assets/orange-icon.png',
+                boatLabel: 'assets/orange-icon.png',
+                isCameraActive: isCameraActive,
+                activeSenderId: activeSenderId,
                 icon: L.divIcon({
                     iconAnchor: [11.5, 11.5],
                     iconSize: [23, 23],
                     className: 'boat peer-boat',
-                    html: `<svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" style="filter: drop-shadow(0px 0px 3px rgba(255,255,255,0.8));">
+                    html: `<svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" style="transform: rotate(${initialVisualHeading}deg); filter: drop-shadow(0px 0px 3px rgba(255,255,255,0.8));">
                     <path d="M 128 512 C 128 512 128 128 256 0 C 384 128 384 512 384 512 Z" fill="${currentColor}" stroke="white" stroke-width="40" stroke-linejoin="round"/>
                     </svg>`
                 })
@@ -529,10 +683,33 @@ L.Control.Boating = L.Control.extend({
         marker.options.speed = e.speed || 0;
         marker.options.heading = e.heading || 0;
         if (marker.svg) {
-            marker.svg.style.transform = `rotate(${e.heading}deg)`;
+            let mapBearing = (this._map && this._map.getBearing) ? this._map.getBearing() : 0;
+            let visualHeading = ((e.heading || 0) + mapBearing + 360) % 360;
+            marker.svg.style.transform = `rotate(${visualHeading}deg)`;
             const path = marker.svg.querySelector('path');
             if (path && path.getAttribute('fill') !== currentColor) {
                 path.setAttribute('fill', currentColor);
+            }
+        }
+        if (window.activeSearchTrack && window.activeSearchTrack.name) {
+            const trackName = String(window.activeSearchTrack.name).trim();
+            const pName = String(name || '').trim();
+            const pNumber = String(number || '').trim();
+            const pTitle = String(marker.options.title || '').trim();
+            const isMatch = (window.activeSearchTrack.layer === marker) ||
+                            (trackName === pName) ||
+                            (trackName === pNumber) ||
+                            (trackName === pTitle) ||
+                            (pName && trackName.includes(pName)) ||
+                            (pNumber && trackName.includes(pNumber));
+            if (isMatch) {
+                if (typeof window.updateSearchTrack === 'function') {
+                    window.updateSearchTrack(e.latlng);
+                }
+                if (this.legend) {
+                    if (this.legend.heading) this.legend.heading.innerHTML = Math.round(e.heading || 0);
+                    if (this.legend.knots) this.legend.knots.innerHTML = parseFloat(e.speed || 0).toFixed(2);
+                }
             }
         }
         if (this.isFollowing() && this.followedPeerId === String(userId)) {
@@ -623,13 +800,14 @@ L.Control.Boating = L.Control.extend({
             let iconPath = peer.icon || '../assets/orange-icon.png';
             let dotColor = isCameraActive ? '#28a745' : 'transparent';
             let dotHtml = `<span style="display: inline-block; width: 10px; height: 1px; border-radius: 50%; background-color: ${dotColor}; margin-left: 4px; box-shadow: 0 0 4px ${dotColor}80;" title="${isCameraActive ? 'Connected' : 'Not Connected'}"></span>`;
-            li.innerHTML = `<a href="#" class="search-result-item" style="padding-right: 10px; display: flex; width: 100%; height: 35px;">
+            li.innerHTML = `<a href="#" class="search-result-item keep-open" style="padding-right: 10px; display: flex; width: 100%; height: 35px;">
             <img src="${iconPath}" style="width: 18px; height: 18px; margin-top: 5px;">
             <span style="font-size: 14px; font-weight: bold; margin-top: 10px; margin-left: 10px;">${displayName} ${dotHtml}</span>
             <span style="margin-left: auto; font-size: 12px; color: #5f6368; font-weight: bold; margin-top: 15px; margin-right: 10px;">${formattedSpeed} kt</span>
             </a>`;
             li.addEventListener('click', (e) => {
                 e.preventDefault();
+                e.stopPropagation();
                 if (this.sessionData && this.followedPeerId !== String(id)) {
                     this.saveRoute(this.sessionData);
                     this.sessionData = null;
@@ -678,6 +856,11 @@ L.Control.Boating = L.Control.extend({
                     this._map.setView(peer.latlng, 20);
                 }
                 if (isCameraActive) {
+                    const createDisplay = document.querySelector('.create-display');
+                    if (createDisplay && !createDisplay.classList.contains('active')) {
+                        if (typeof closeAllPanels === 'function') closeAllPanels();
+                        createDisplay.classList.add('active');
+                    }
                     if (typeof window.activatePiPMode === 'function') {
                         window.activatePiPMode(peer.name, activeSenderId);
                     }
@@ -689,83 +872,6 @@ L.Control.Boating = L.Control.extend({
             });
             container.appendChild(li);
         });
-    },
-    trackPeerByName: function (name) {
-        let targetId = null;
-        for (let id in this.peerData) {
-            if (this.peerData[id].name === name) {
-                targetId = id;
-                break;
-            }
-        }
-        if (this.sessionData && this.followedPeerId !== String(targetId)) {
-            this.saveRoute(this.sessionData);
-            this.sessionData = null;
-            this.track.setLatLngs([]);
-        }
-        this.icon.classList.remove('requesting', 'locating');
-        this.icon.classList.add('following');
-        if (this.legend && !this.legend._map) {
-            this._map.addControl(this.legend);
-        }
-        if (!this._map.hasLayer(this.circle)) {
-            this._map.addLayer(this.circle);
-        }
-        if (!this.sessionData) {
-            this.sessionData = {
-                startTime: new Date(),
-                totalDistance: 0,
-                path: [],
-                lastLatLng: null,
-                boatName: name
-            };
-            if (!this._map.hasLayer(this.track)) {
-                this._map.addLayer(this.track);
-            }
-        }
-        if (targetId) {
-            this.followedPeerId = String(targetId);
-            const peer = this.peerData[targetId];
-            if (peer.latlng) {
-                this.circle.setLatLng(peer.latlng);
-                this.circle.setRadius(15);
-                this.sessionData.path.push(peer.latlng);
-                this.sessionData.lastLatLng = peer.latlng;
-                this.track.setLatLngs([peer.latlng]);
-                this._map.setView(peer.latlng, 20);
-            }
-            if (this.legend) {
-                const headingVal = Math.round(parseFloat(peer.heading || 0));
-                const speedValNum = parseFloat(peer.speed || 0).toFixed(2);
-                if (this.legend.boatName) this.legend.boatName.innerHTML = peer.name;
-                if (this.legend.heading) this.legend.heading.innerHTML = headingVal;
-                if (this.legend.knots) this.legend.knots.innerHTML = speedValNum;
-                if (this.legend.totalDist) this.legend.totalDist.innerHTML = "0.00";
-            }
-        } else {
-            if (this.legend && this.legend.boatName) {
-                this.legend.boatName.innerHTML = name;
-            }
-        }
-        this.startStopwatch();
-    },
-    startStopwatch: function () {
-        this.stopStopwatch(); // Ensure no duplicates run
-        this.stopwatchInterval = setInterval(() => {
-            if (this.sessionData && this.sessionData.startTime && this.legend && this.legend.timeElapsed) {
-                const diff = new Date() - this.sessionData.startTime;
-                const h = Math.floor(diff / 3600000);
-                const m = Math.floor((diff % 3600000) / 60000);
-                const s = Math.floor((diff % 60000) / 1000);
-                this.legend.timeElapsed.innerHTML = h + "h " + m + "m " + s + "s";
-            }
-        }, 1000);
-    },
-    stopStopwatch: function () {
-        if (this.stopwatchInterval) {
-            clearInterval(this.stopwatchInterval);
-            this.stopwatchInterval = null;
-        }
     },
     onLocationError: function (e) {
         console.error(e)
@@ -810,8 +916,20 @@ L.Control.Boating = L.Control.extend({
     },
     updateBoat: function (boat, e) {
         const heading = e.smooth.heading;
-        if (boat.svg) {
-            boat.svg.style.transform = 'rotate(' + heading + 'deg)';
+        if (this.isFollowing() && this._map.setBearing) {
+            if (boat.svg) boat.svg.style.transform = 'rotate(0deg)';
+            this._map.setBearing(-heading);
+            if (typeof window.updateAllBoatMarkersRotation === 'function') {
+                window.updateAllBoatMarkersRotation(-heading);
+            }
+            if (typeof window.updatePolylineMeasureArrowsRotation === 'function') {
+                window.updatePolylineMeasureArrowsRotation(-heading);
+            }
+        } else {
+            if (boat.svg) {
+                let mapBearing = (this._map && this._map.getBearing) ? this._map.getBearing() : 0;
+                boat.svg.style.transform = `rotate(${(heading + mapBearing + 360) % 360}deg)`;
+            }
         }
         boat.setLatLng(e.latlng);
     },
@@ -925,6 +1043,26 @@ L.Control.Boating = L.Control.extend({
 L.control.boating = function (options) {
     return new L.Control.Boating(options)
 }
+function fetchOnlineLocations() {
+    fetch('location.json')
+        .then(response => response.json())
+        .then(data => {
+            data.forEach(boat => {
+                receiveServerLocation(
+                    boat.UserId,
+                    boat.Number,
+                    boat.Name,
+                    boat.Type,
+                    boat.UnitName,
+                    boat.lat,
+                    boat.lng,
+                    boat.bearing,
+                    boat.speed
+                );
+            });
+        })
+        .catch(err => console.error("Error loading online locations:", err));
+}
 function receiveServerLocation(UserId, Number, Name, Type, UnitName, lat, lng, bearing, speed) {
     if (UserId == 1) {
         return;
@@ -963,10 +1101,11 @@ function receiveServerLocation(UserId, Number, Name, Type, UnitName, lat, lng, b
         map.setView(newLL);
     }
 }
-function receiveServiceLocation(UserId, Number, lat, lng, bearing, speed) {
+function receiveServiceLocation(UserId, Number, Name, lat, lng, bearing, speed) {
     if (window.boatingControl) {
         const id = UserId;
         const number = Number;
+        const name = Name;
         const locationEvent = {
             latlng: L.latLng(lat, lng),
             accuracy: 10,
@@ -975,6 +1114,24 @@ function receiveServiceLocation(UserId, Number, lat, lng, bearing, speed) {
         };
         window.boatingControl.onLocationFound(locationEvent);
     }
+}
+function fetchOfflineLocations() {
+    fetch('geolocation.json')
+        .then(response => response.json())
+        .then(data => {
+            if (data && data.type === "FeatureCollection" && data.features) {
+                data.features.forEach(feature => {
+                    const props = feature.properties;
+                    const coords = feature.geometry.coordinates;
+                    const lng = coords[0];
+                    const lat = coords[1];
+                    if (lat !== 0 && lng !== 0) {
+                        receiveInactiveLocation(props.name, props.number, lat, lng);
+                    }
+                });
+            }
+        })
+        .catch(err => console.error("Error loading offline locations:", err));
 }
 function receiveInactiveLocation(name, number, lat, lng) {
     if (window.boatingControl && window.boatingControl._map) {
@@ -995,23 +1152,25 @@ function receiveInactiveLocation(name, number, lat, lng) {
             window.boatingControl.inactiveMarkers[name].setLatLng([validLat, validLng]);
             return; // Stop the function here so a duplicate isn't created
         }
+        let mapBearing = (window.boatingControl && window.boatingControl._map && window.boatingControl._map.getBearing) ? window.boatingControl._map.getBearing() : 0;
+        let visualHeading = (45 + mapBearing + 360) % 360;
         const dockedIcon = L.divIcon({
             iconAnchor: [11.5, 11.5],
             iconSize: [23, 23],
             className: 'boat peer-boat',
-            html: `<svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" style="transform: rotate(45deg); filter: drop-shadow(0px 0px 3px rgba(255,255,255,0.8));">
+            html: `<svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" style="transform: rotate(${visualHeading}deg); filter: drop-shadow(0px 0px 3px rgba(255,255,255,0.8));">
                 <path d="M 128 512 C 128 512 128 128 256 0 C 384 128 384 512 384 512 Z" fill="#202978" stroke="white" stroke-width="40" stroke-linejoin="round"/>
             </svg>`
         });
-        const marker = L.marker([validLat, validLng], { icon: dockedIcon, title: name, speed: 0, heading: 0, boatLabel: '../assets/blue-icon.png' });
+        const marker = L.marker([validLat, validLng], { icon: dockedIcon, title: name, speed: 0, heading: 45, boatLabel: 'assets/blue-icon.png' });
         marker.bindTooltip(`${number}`, {
             permanent: true,
             direction: 'top',
             className: 'transparent-tooltip'
         });
         window.boatingControl.inactiveMarkers[name] = marker;
-        if (window.template6) {
-            marker.addTo(window.template6);
+        if (window.template5) {
+            marker.addTo(window.template5);
         } else {
             marker.addTo(window.boatingControl._map);
         }
@@ -1067,9 +1226,10 @@ function initializeClusters(map) {
         window.liveBoatCluster = L.markerClusterGroup({
             animate: false,
             animateAddingMarkers: false,
-            zoomToBoundsOnClick: false,
             spiderfyOnMaxZoom: false,
-            showCoverageOnHover: false,
+            zoomToBoundsOnClick: false, // Prevents the map from zooming in when a cluster is clicked
+            spiderfyOnMaxZoom: false,   // Prevents markers from fanning out when clicked at max zoom
+            showCoverageOnHover: false,  // Keeps the UI clean by removing hover polygons
             disableClusteringAtZoom: 13,
             maxClusterRadius: 30,
             iconCreateFunction: function (cluster) {
@@ -1089,9 +1249,10 @@ function initializeClusters(map) {
         window.wfsBoatCluster = L.markerClusterGroup({
             animate: false,
             animateAddingMarkers: false,
-            zoomToBoundsOnClick: false,
             spiderfyOnMaxZoom: false,
-            showCoverageOnHover: false,
+            zoomToBoundsOnClick: false, // Prevents the map from zooming in when a cluster is clicked
+            spiderfyOnMaxZoom: false,   // Prevents markers from fanning out when clicked at max zoom
+            showCoverageOnHover: false,  // Keeps the UI clean by removing hover polygons
             disableClusteringAtZoom: 13,
             maxClusterRadius: 30,
             iconCreateFunction: function (cluster) {
@@ -1109,10 +1270,12 @@ function initializeClusters(map) {
     }
 }
 window.receiveLiveBoatLocation = function (name, lat, lng, heading, speed) {
-    const map = window.template6 || (window.boatingControl && window.boatingControl._map);
+    const map = window.template5 || (window.boatingControl && window.boatingControl._map);
     if (!map || isNaN(lat) || isNaN(lng)) return;
     initializeClusters(map);
     heading = parseFloat(heading) || 45;
+    let mapBearing = (map && map.getBearing) ? map.getBearing() : (window.boatingControl && window.boatingControl._map && window.boatingControl._map.getBearing ? window.boatingControl._map.getBearing() : 0);
+    const visualHeading = (heading + mapBearing + 360) % 360;
     const getIcon = (deg) => L.divIcon({
         iconAnchor: [11.5, 11.5],
         iconSize: [23, 23],
@@ -1123,15 +1286,16 @@ window.receiveLiveBoatLocation = function (name, lat, lng, heading, speed) {
     });
     if (window.liveMarkers[name]) {
         const marker = window.liveMarkers[name];
+        marker.options.heading = heading;
         marker.setLatLng([lat, lng]);
-        marker.setIcon(getIcon(heading));
+        marker.setIcon(getIcon(visualHeading));
     } else {
-        const marker = L.marker([lat, lng], { icon: getIcon(heading), title: name, boatColor: '#48975b', boatLabel: '../assets/green-icon.png', heading: heading, speed: speed });
+        const marker = L.marker([lat, lng], { icon: getIcon(visualHeading), title: name, boatColor: '#48975b', boatLabel: 'assets/green-icon.png', heading: heading, speed: speed });
         marker.bindTooltip(name, { permanent: true, direction: 'top', className: 'transparent-tooltip', offset: [0, -10] });
         window.liveMarkers[name] = marker;
         window.liveBoatCluster.addLayer(marker);
     }
-    if (window.activeSearchTrack && window.activeSearchTrack.name === name) {
+    if (window.activeSearchTrack && window.activeSearchTrack.name && String(window.activeSearchTrack.name).trim() === String(name).trim()) {
         updateSearchTrack({ lat: lat, lng: lng });
         if (window.boatingControl && window.boatingControl.legend) {
             const legend = window.boatingControl.legend;
@@ -1139,12 +1303,17 @@ window.receiveLiveBoatLocation = function (name, lat, lng, heading, speed) {
             if (legend.knots) legend.knots.innerHTML = parseFloat(speed || 0).toFixed(2);
         }
     }
+    if (window.OfflineHelper) {
+        window.OfflineHelper.saveBoatLocation('VMS', name, lat, lng, heading, speed, { type: 'VMS' });
+    }
 };
 window.receiveWfsBoatLocation = function (name, lat, lng, heading, speed) {
-    const map = window.template6 || (window.boatingControl && window.boatingControl._map);
+    const map = window.template5 || (window.boatingControl && window.boatingControl._map);
     if (!map || isNaN(lat) || isNaN(lng)) return;
     initializeClusters(map);
     heading = parseFloat(heading) || 0;
+    let mapBearing = (map && map.getBearing) ? map.getBearing() : (window.boatingControl && window.boatingControl._map && window.boatingControl._map.getBearing ? window.boatingControl._map.getBearing() : 0);
+    const visualHeading = (heading + mapBearing + 360) % 360;
     const getIcon = (deg) => L.divIcon({
         iconAnchor: [11.5, 11.5],
         iconSize: [23, 23],
@@ -1155,20 +1324,79 @@ window.receiveWfsBoatLocation = function (name, lat, lng, heading, speed) {
     });
     if (window.wfsMarkers[name]) {
         const marker = window.wfsMarkers[name];
+        marker.options.heading = heading;
         marker.setLatLng([lat, lng]);
-        marker.setIcon(getIcon(heading));
+        marker.setIcon(getIcon(visualHeading));
     } else {
-        const marker = L.marker([lat, lng], { icon: getIcon(heading), title: name, boatColor: '#ff0000', boatLabel: '../assets/red-icon.png', heading: heading, speed: speed });
+        const marker = L.marker([lat, lng], { icon: getIcon(visualHeading), title: name, boatColor: '#ff0000', boatLabel: 'assets/red-icon.png', heading: heading, speed: speed });
         marker.bindTooltip(name, { permanent: true, direction: 'top', className: 'transparent-tooltip', offset: [0, -10] });
         window.wfsMarkers[name] = marker;
         window.wfsBoatCluster.addLayer(marker);
     }
-    if (window.activeSearchTrack && window.activeSearchTrack.name === name) {
+    if (window.activeSearchTrack && window.activeSearchTrack.name && String(window.activeSearchTrack.name).trim() === String(name).trim()) {
         updateSearchTrack({ lat: lat, lng: lng });
         if (window.boatingControl && window.boatingControl.legend) {
             const legend = window.boatingControl.legend;
             if (legend.heading) legend.heading.innerHTML = Math.round(heading);
             if (legend.knots) legend.knots.innerHTML = parseFloat(speed || 0).toFixed(2);
         }
+    }
+    if (window.OfflineHelper) {
+        window.OfflineHelper.saveBoatLocation('AIS', name, lat, lng, heading, speed, { type: 'AIS' });
+    }
+};
+window.updateAllBoatMarkersRotation = function (mapBearing) {
+    if (mapBearing === undefined && window.boatingControl && window.boatingControl._map && window.boatingControl._map.getBearing) {
+        mapBearing = window.boatingControl._map.getBearing();
+    }
+    mapBearing = parseFloat(mapBearing) || 0;
+    if (typeof window.updatePolylineMeasureArrowsRotation === 'function') {
+        window.updatePolylineMeasureArrowsRotation(mapBearing);
+    }
+    const updateIconHtml = (marker, defaultFillColor) => {
+        if (!marker || marker.options.heading === undefined) return;
+        const trueHeading = parseFloat(marker.options.heading) || 0;
+        const visualDeg = (trueHeading + mapBearing + 360) % 360;
+        const el = marker.getElement();
+        let fillColor = marker.options.boatColor || marker.options.fillColor || defaultFillColor || '#202978';
+        if (el) {
+            const path = el.querySelector('path');
+            if (path && path.getAttribute('fill')) {
+                fillColor = path.getAttribute('fill');
+            }
+            const svg = el.querySelector('svg');
+            if (svg) svg.style.transform = `rotate(${visualDeg}deg)`;
+        }
+        if (marker.options.icon && marker.options.icon.options) {
+            marker.options.icon.options.html = `<svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" style="transform: rotate(${visualDeg}deg); width: 100%; height: 100%; filter: drop-shadow(0px 0px 3px rgba(255,255,255,0.8));"> 
+            <path d="M 128 512 C 128 512 128 128 256 0 C 384 128 384 512 384 512 Z" fill="${fillColor}" stroke="white" stroke-width="40" stroke-linejoin="round"/> 
+            </svg>`;
+        }
+    };
+    if (window.liveMarkers) {
+        Object.values(window.liveMarkers).forEach(marker => updateIconHtml(marker, '#48975b'));
+    }
+    if (window.wfsMarkers) {
+        Object.values(window.wfsMarkers).forEach(marker => updateIconHtml(marker, '#ff0000'));
+    }
+    if (window.targetMarkers) {
+        Object.values(window.targetMarkers).forEach(marker => updateIconHtml(marker, '#202978'));
+    }
+    if (window.activeTargets) {
+        Object.values(window.activeTargets).forEach(target => {
+            if (target && target.marker) updateIconHtml(target.marker, '#202978');
+        });
+    }
+    if (window.boatingControl && window.boatingControl.peers) {
+        Object.values(window.boatingControl.peers).forEach(marker => updateIconHtml(marker, '#ff8833'));
+    }
+    if (window.boatingControl && window.boatingControl.inactiveMarkers) {
+        Object.values(window.boatingControl.inactiveMarkers).forEach(marker => updateIconHtml(marker, '#202978'));
+    }
+    if (window.liveBoatCluster) {
+        window.liveBoatCluster.eachLayer(marker => updateIconHtml(marker, '#48975b'));
+    }
+    if (window.wfsBoatCluster) {
+        window.wfsBoatCluster.eachLayer(marker => updateIconHtml(marker, '#ff0000'));
     }
 };

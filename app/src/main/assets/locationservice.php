@@ -60,12 +60,18 @@ $online_sql = "SELECT * FROM tmp_patrol WHERE status = 'online' AND lat IS NOT N
 $online_result = $conn->query($online_sql);
 
 $online_devices = array();
+$features = array();
+
 if ($online_result && $online_result->num_rows > 0) { 
     while($row = $online_result->fetch_assoc()) { 
+        $shipName = !empty($row['name']) ? $row['name'] : 'Unknown';
+        $shipNumber = !empty($row['number']) ? $row['number'] : '';
+        
+        // Build the basic array
         $online_devices[] = array( 
             "UserId" => (string)$row['id'], 
-            "Number" => $row['number'] ?? '', 
-            "Name" => $row['name'] ?? 'Unknown',
+            "Number" => $shipNumber, 
+            "Name" => $shipName,
             "Type" => $row['type'] ?? '',
             "UnitName" => $row['unit_name'] ?? '',
             "lat" => (string)$row['lat'],
@@ -73,24 +79,8 @@ if ($online_result && $online_result->num_rows > 0) {
             "bearing" => (string)($row['bearing'] ?? '0.0'),
             "speed" => (string)($row['speed'] ?? '0.0')
         );
-    }
-}
-
-// 1. Encode the PHP array into a JSON string
-$json_data = json_encode($online_devices, JSON_UNESCAPED_UNICODE);
-
-// 2. Write the standard location.json file
-file_put_contents('location.json', $json_data);
-
-$online_sql = "SELECT * FROM tmp_patrol WHERE status = 'online' AND lat IS NOT NULL AND lng IS NOT NULL AND id != '1'";
-$online_result = $conn->query($online_sql);
-
-$online_features = array();
-if ($online_result && $online_result->num_rows > 0) { 
-    while($row = $online_result->fetch_assoc()) { 
-        $shipName = !empty($row['name']) ? $row['name'] : 'Unknown';
-        $shipNumber = !empty($row['number']) ? $row['number'] : 'Unknown';
         
+        // Build the GeoJSON feature array
         $features[] = array(
             "type" => "Feature",
             "geometry" => array(
@@ -106,39 +96,36 @@ if ($online_result && $online_result->num_rows > 0) {
     }
 }
 
+// 1. Write the standard location.json file
+file_put_contents('location.json', json_encode($online_devices, JSON_UNESCAPED_UNICODE));
+
+// 2. Write the location.js file with GeoJSON
 $online_geoJSON = array( 
     "type" => "FeatureCollection", 
     "features" => $features
 );
-
-// 1. Encode the PHP array into a JSON string (using PRETTY_PRINT to match geolocation)
-$json_data = json_encode($online_geoJSON, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
-
-// 3. Create the JavaScript content by prepending a variable declaration
-$js_content = "const locationJSON = " . $json_data . ";";
-
-// 4. Write the content to location.js
+$js_content = "const locationJSON = " . json_encode($online_geoJSON, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . ";";
 file_put_contents('location.js', $js_content);
 
 $offline_sql = "SELECT * FROM tmp_patrol WHERE (status = 'offline' OR status IS NULL) AND lat IS NOT NULL AND lng IS NOT NULL AND id != '1'";
 $offline_result = $conn->query($offline_sql);
 
-$features = array();
+$offline_features = array();
 if ($offline_result && $offline_result->num_rows > 0) {
     while($row = $offline_result->fetch_assoc()) {
         $shipName = !empty($row['name']) ? $row['name'] : 'Unknown';
         $shipNumber = !empty($row['number']) ? $row['number'] : 'Unknown';
         
-        $features[] = array(
+        $offline_features[] = array(
             "type" => "Feature",
             "geometry" => array(
                 "type" => "Point",
-                "coordinates" => array((float)$row['lng'], (float)$row['lat']) // GeoJSON uses [lng, lat]
+                "coordinates" => array((float)$row['lng'], (float)$row['lat'])
             ),
             "properties" => array(
                 "name" => $shipName,
                 "number" => $shipNumber,
-                "bearing" => (string)($row['bearing'] ?? '0.0'), // <-- NEW: Include the last known bearing
+                "bearing" => (string)($row['bearing'] ?? '0.0'),
                 "status" => "offline"
             )
         );
@@ -147,11 +134,9 @@ if ($offline_result && $offline_result->num_rows > 0) {
 
 $geoJSON = array( 
     "type" => "FeatureCollection", 
-    "features" => $features
+    "features" => $offline_features
 );
-
-$json_content = json_encode($geoJSON, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
-file_put_contents("geolocation.json", $json_content);
+file_put_contents("geolocation.json", json_encode($geoJSON, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
 
 if ($status && !$lat && !$lng) {
     echo json_encode(["success" => "Device status set to $status. Files updated."]);

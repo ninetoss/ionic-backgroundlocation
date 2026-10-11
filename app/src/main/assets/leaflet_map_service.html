@@ -1664,6 +1664,37 @@
                         selectedDate = new Date(today.getTime() - today.getTimezoneOffset() * 60000).toISOString().split('T')[0];
                         dateInput.value = selectedDate;
                     }
+                    if (typeof OfflineHelper !== 'undefined' && OfflineHelper.isOffline() && window.currentOfflineReportId) {
+                        OfflineHelper.getWeatherData(window.currentOfflineReportId).then(data => {
+                            if (data && typeof renderData === 'function') {
+                                if (data.points && data.points.length > 0) {
+                                    let closest = data.points[0];
+                                    let minDist = Infinity;
+                                    function haversineDist(lat1, lon1, lat2, lon2) {
+                                        const R = 6371;
+                                        const dLat = (lat2 - lat1) * Math.PI / 180;
+                                        const dLon = (lon2 - lon1) * Math.PI / 180;
+                                        const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                                            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                                            Math.sin(dLon / 2) * Math.sin(dLon / 2);
+                                        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+                                        return R * c;
+                                    }
+                                    for (let i = 0; i < data.points.length; i++) {
+                                        let pt = data.points[i];
+                                        let dist = haversineDist(lat, lng, pt.lat, pt.lng);
+                                        if (dist < minDist) { minDist = dist; closest = pt; }
+                                    }
+                                    renderData({ weather: closest.weather, marine: closest.marine }, data.date);
+                                } else {
+                                    renderData({ weather: data.weather, marine: data.marine }, data.date);
+                                }
+                            } else {
+                                document.getElementById('ui-hourly-container').innerHTML = '<div style="width: 100%; text-align: center; color: red;">ไม่มีข้อมูลออฟไลน์</div>';
+                            }
+                        });
+                        return;
+                    }
                     const omUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,weather_code,wind_speed_10m,wind_direction_10m&hourly=temperature_2m,weather_code,wind_speed_10m,wind_direction_10m&daily=sunrise,sunset&timezone=auto&start_date=${selectedDate}&end_date=${selectedDate}`;
                     const marineUrl = `https://marine-api.open-meteo.com/v1/marine?latitude=${lat}&longitude=${lng}&current=wave_height,sea_level_height_msl&hourly=wave_height,sea_level_height_msl&timezone=auto&start_date=${selectedDate}&end_date=${selectedDate}`;
                     try {
@@ -2931,79 +2962,101 @@
             weight: 1,
             fillOpacity: 0
         };
-        var allCoastalCurrentsLayer = L.layerGroup();
-        async function loadCoastalCurrents() {
-            const layers = ['recent_gulf', 'v_recent_gul5', 'v_recent_gul6', 'recent_gul3', 'recent_gul4', 'v_recent_gul7'];
-            const baseUrl = 'https://ocean.gistda.or.th/geoserver/coastalradar/ows?service=WFS&version=1.0.0&request=GetFeature&outputFormat=application%2Fjson&typeName=coastalradar:';
-            function getVelocityColor(v) {
-                if (v >= 85) return '#ff0000';
-                if (v >= 80) return '#fb6a47';
-                if (v >= 75) return '#fb9d47';
-                if (v >= 70) return '#facd48';
-                if (v >= 65) return '#faff4b';
-                if (v >= 60) return '#e3ff47';
-                if (v >= 55) return '#cbff49';
-                if (v >= 50) return '#93fe44';
-                if (v >= 45) return '#46fe43';
-                if (v >= 40) return '#4cfd99';
-                if (v >= 35) return '#53fdcd';
-                if (v >= 30) return '#55fde6';
-                if (v >= 25) return '#57fdfe';
-                if (v >= 20) return '#57ccfe';
-                if (v >= 15) return '#579afe';
-                if (v >= 10) return '#576efe';
-                return '#5853ff';
+        var coastalRadarWMSUrl = "https://ocean.gistda.or.th/geoserver/coastalradar/wms";
+        var combinedRadarLayers = "recent_gulf,v_recent_gul5,v_recent_gul6,recent_gul3,recent_gul4,v_recent_gul7";
+        var allCoastalCurrents = L.tileLayer.wms(coastalRadarWMSUrl, {
+            layers: combinedRadarLayers,
+            format: 'image/png',
+            transparent: true,
+            version: '1.1.0',
+            opacity: 0.5,            // ADDED: Makes the WMS layer 40% transparent
+            cache_buster: Date.now() // Live data requires cache busting 
+        });
+        setInterval(function () {
+            if (map.hasLayer(allCoastalCurrents)) {
+                allCoastalCurrents.setParams({
+                    cache_buster: Date.now()
+                });
             }
-            function createArrowIcon(feature) {
-                var v = feature.properties.velocity || 0;
-                var dir = feature.properties.direction || 0;
-                var color = getVelocityColor(v);
-                var html = `<div style="transform: rotate(${dir}deg); transform-origin: center; width: 14px; height: 14px; display: flex; align-items: center; justify-content: center;">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M12 2L12 22M12 2L5 9M12 2L19 9" stroke="${color}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-                    </svg>
+        }, 3600000);
+        var allCoastalCurrentsLayer = L.layerGroup()
+        function getVelocityColor(v) {
+            if (v >= 85) return '#ff0000';
+            if (v >= 80) return '#fb6a47';
+            if (v >= 75) return '#fb9d47';
+            if (v >= 70) return '#facd48';
+            if (v >= 65) return '#faff4b';
+            if (v >= 60) return '#e3ff47';
+            if (v >= 55) return '#cbff49';
+            if (v >= 50) return '#93fe44';
+            if (v >= 45) return '#46fe43';
+            if (v >= 40) return '#4cfd99';
+            if (v >= 35) return '#53fdcd';
+            if (v >= 30) return '#55fde6';
+            if (v >= 25) return '#57fdfe';
+            if (v >= 20) return '#57ccfe';
+            if (v >= 15) return '#579afe';
+            if (v >= 10) return '#576efe';
+            return '#5853ff';
+        }
+        function createArrowIcon(feature) {
+            var v = feature.properties.velocity || 0;
+            var dir = feature.properties.direction || 0;
+            var color = getVelocityColor(v);
+            var html = `<div style="transform: rotate(${dir}deg); transform-origin: center; width: 14px; height: 14px; display: flex; align-items: center; justify-content: center;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 2L12 22M12 2L5 9M12 2L19 9" stroke="${color}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
                 </div>`;
-                return L.divIcon({ html: html, className: '', iconSize: [14, 14], iconAnchor: [7, 7] });
-            }
-            function renderFeatures(features) {
-                var layer = L.geoJSON(features, {
-                    pointToLayer: function (feature, latlng) {
-                        return L.marker(latlng, { icon: createArrowIcon(feature) });
-                    },
-                    onEachFeature: function (feature, layer) {
-                        if (feature.properties) {
-                            var v = feature.properties.velocity ? feature.properties.velocity.toFixed(2) : '-';
-                            var d = feature.properties.direction ? feature.properties.direction.toFixed(2) : '-';
-                        }
+            return L.divIcon({
+                html: html,
+                className: '', // ปล่อยว่างเพื่อไม่ให้มีพื้นหลังสี่เหลี่ยมสีขาว
+                iconSize: [14, 14],
+                iconAnchor: [7, 7]
+            });
+        }
+        function renderFeatures(features) {
+            var layer = L.geoJSON(features, {
+                pointToLayer: function (feature, latlng) {
+                    return L.marker(latlng, { icon: createArrowIcon(feature) });
+                },
+                onEachFeature: function (feature, layer) {
+                    if (feature.properties) {
+                        var v = feature.properties.velocity ? feature.properties.velocity.toFixed(2) : '-';
+                        var d = feature.properties.direction ? feature.properties.direction.toFixed(2) : '-';
+                    }
+                }
+            });
+            allCoastalCurrentsLayer.clearLayers();
+            allCoastalCurrentsLayer.addLayer(layer);
+        }
+        async function loadAndDisplayAllCurrents() {
+            const proxyUrl = "https://dntservicetruck.co.th/proxy.php";
+            const targetLayers = ['recent_gulf', 'v_recent_gul6', 'v_recent_gul7'];
+            try {
+                const fetchPromises = targetLayers.map(layer => {
+                    return fetch(`${proxyUrl}?layer=${layer}`).then(res => {
+                        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                        return res.json();
+                    });
+                });
+                const results = await Promise.all(fetchPromises);
+                let combinedFeatures = [];
+                results.forEach(geojsonData => {
+                    if (geojsonData && geojsonData.features) {
+                        combinedFeatures = combinedFeatures.concat(geojsonData.features);
                     }
                 });
-                allCoastalCurrentsLayer.clearLayers();
-                allCoastalCurrentsLayer.addLayer(layer);
-            }
-            try {
-                let allFeatures = [];
-                const fetchPromises = layers.map(layer => fetch(baseUrl + layer).then(res => res.json()));
-                const results = await Promise.all(fetchPromises);
-                results.forEach(res => {
-                    if (res && res.features) allFeatures = allFeatures.concat(res.features);
-                });
-                if (allFeatures.length > 0) {
-                    renderFeatures(allFeatures);
-                    try { localStorage.setItem('cached_currents', JSON.stringify(allFeatures)); } catch (e) { }
-                }
-            } catch (e) {
-                let cached = localStorage.getItem('cached_currents');
-                if (cached) {
-                    try { renderFeatures(JSON.parse(cached)); return; } catch (ex) { }
-                }
-                fetch('dist/COASTAL_RADAR_CURRENTS.json')
-                    .then(res => res.json())
-                    .then(data => { if (data && data.features) renderFeatures(data.features); })
-                    .catch(err => console.log("Failed to load bundled currents: ", err));
+                const combinedGeoJSON = {
+                    type: "FeatureCollection",
+                    features: combinedFeatures
+                };
+                renderFeatures(combinedGeoJSON);
+            } catch (error) {
             }
         }
-        loadCoastalCurrents();
-        setInterval(loadCoastalCurrents, 3600000);
+        loadAndDisplayAllCurrents();
+        setInterval(loadAndDisplayAllCurrents, 3600000);
         var aisWMSUrl = "https://ocean.gistda.or.th/geoserver/ais/wms";
         var aisLayerName = "view_vessel_latest_gportal";
         var aisLayer = L.tileLayer.wms(aisWMSUrl, {
@@ -3656,6 +3709,7 @@
         if (typeof updateContourDepthLabels === 'function') {
             updateContourDepthLabels();
         }
+        allCoastalCurrents.addTo(map);
         allCoastalCurrentsLayer.addTo(map);
         aisLayer.addTo(map);
         window.template5.addTo(map);
@@ -4886,6 +4940,7 @@
             var savedReports = JSON.parse(localStorage.getItem('savedPolygonReports') || '[]');
             savedReports.push(newReport);
             localStorage.setItem('savedPolygonReports', JSON.stringify(savedReports));
+            if (typeof OfflineHelper !== 'undefined') { OfflineHelper.saveMissionData(newReport, mapLines); }
             currentSessionLines = [];
             if (typeof polylineMeasure !== 'undefined' && polylineMeasure.clearAll) { polylineMeasure.clearAll(); }
             document.getElementById('mission').value = "";
@@ -5050,6 +5105,7 @@
             var reportToDelete = savedReports[index];
             savedReports.splice(index, 1);
             localStorage.setItem('savedPolygonReports', JSON.stringify(savedReports));
+            if (typeof OfflineHelper !== 'undefined' && reportToDelete) { OfflineHelper.deleteMissionData(reportToDelete); }
             displayReports();
         }
         function loadReportOnMap(report) {
@@ -5057,6 +5113,25 @@
             var datePickerEl = document.querySelector("#visible-weather-date");
             if (datePickerEl && datePickerEl._flatpickr && report.startDate) {
                 datePickerEl._flatpickr.setDate(report.startDate, true);
+            }
+            if (typeof OfflineHelper !== 'undefined' && OfflineHelper.isOffline()) {
+                window.currentOfflineReportId = report.id;
+                OfflineHelper.getWeatherData(report.id).then(data => {
+                    if (data && typeof renderData === 'function') {
+                        if (data.points && data.points.length > 0) {
+                            renderData({ weather: data.points[0].weather, marine: data.points[0].marine }, data.date);
+                        } else {
+                            renderData({ weather: data.weather, marine: data.marine }, data.date);
+                        }
+                    }
+                });
+                OfflineHelper.getWMSData(report.id).then(data => {
+                    if (data && data.image) {
+                        if (window.offlineWmsLayer) map.removeLayer(window.offlineWmsLayer);
+                        var bounds = [[data.bbox.minLat, data.bbox.minLng], [data.bbox.maxLat, data.bbox.maxLng]];
+                        window.offlineWmsLayer = L.imageOverlay(data.image, bounds).addTo(map);
+                    }
+                });
             }
             if (polylineMeasure && polylineMeasure.clearAll) {
                 polylineMeasure.clearAll();
@@ -5421,6 +5496,23 @@
         }
         map.on('zoomend', handleMapZoom);
         handleMapZoom();
+        if (window.OfflineHelper) {
+            OfflineHelper.getOfflineBoats().then(boats => {
+                boats.forEach(b => {
+                    if (b.group === 'VMS' && typeof receiveLiveBoatLocation === 'function') {
+                        receiveLiveBoatLocation(b.name, b.lat, b.lng, b.heading, b.speed);
+                        if (window.liveMarkers && window.liveMarkers[b.name]) {
+                            window.liveMarkers[b.name].feature = { properties: b.properties };
+                        }
+                    } else if (b.group === 'AIS' && typeof receiveWfsBoatLocation === 'function') {
+                        receiveWfsBoatLocation(b.name, b.lat, b.lng, b.heading, b.speed);
+                        if (window.wfsMarkers && window.wfsMarkers[b.name]) {
+                            window.wfsMarkers[b.name].feature = { properties: b.properties };
+                        }
+                    }
+                });
+            });
+        }
         window.liveMarkers = window.liveMarkers || {};
         window.receiveLiveBoatLocation = function (name, lat, lng, heading, speed) {
             if (typeof OfflineHelper !== 'undefined') {
@@ -5755,16 +5847,24 @@
             };
         }
         window.savePersistedBoats = function () {
-            const targetsToSave = {};
-            for (const id in window.activeTargets) {
-                targetsToSave[id] = window.activeTargets[id].data;
+            try {
+                const targetsToSave = {};
+                for (const id in window.activeTargets) {
+                    if (window.activeTargets[id] && window.activeTargets[id].data) {
+                        targetsToSave[id] = window.activeTargets[id].data;
+                    }
+                }
+                localStorage.setItem('persistedTargets', JSON.stringify(targetsToSave));
+                if (window.followSimulation && window.followSimulation.data) {
+                    const followsToSave = {};
+                    followsToSave['sim'] = window.followSimulation.data;
+                    localStorage.setItem('persistedFollows', JSON.stringify(followsToSave));
+                } else {
+                    localStorage.removeItem('persistedFollows');
+                }
+            } catch (e) {
+                console.error("Error in savePersistedBoats:", e);
             }
-            localStorage.setItem('persistedTargets', JSON.stringify(targetsToSave));
-            const followsToSave = {};
-            if (window.followSimulation && window.followSimulation.data) {
-                followsToSave['sim'] = window.followSimulation.data;
-            }
-            localStorage.setItem('persistedFollows', JSON.stringify(followsToSave));
         };
         window.createBoatListItem = function (type, id, data) {
             const dateStr = new Date(data.startTime).toLocaleDateString('th-TH', {
@@ -5801,7 +5901,7 @@
             </table>
             </a>
             <div style="display: flex; justify-content: space-between; margin-top: 0px;">
-            <button class="btn btn-danger" style="font-size: 14px;"><i class="fa fa-trash" style="font-size: 20px; margin-right: 5px;" onclick="window.deleteBoat('${type}', '${id}')"></i> ลบ</button>
+            <button class="btn btn-danger" style="font-size: 14px;" onclick="window.deleteBoat('${type}', '${id}')"><i class="fa fa-trash" style="font-size: 20px; margin-right: 5px;"></i> ลบ</button>
             <button class="btn btn-warning" id="${type}-playpause-${id}" style="font-size: 14px;" onclick="window.togglePauseBoat('${type}', '${id}')"><i class="fa ${data.isPaused ? 'fa-play' : 'fa-pause'}" style="font-size: 20px;"></i></button>
             </div>
             </li>`;
@@ -5810,7 +5910,7 @@
             if (type === 'target') {
                 if (window.activeTargets[id]) {
                     if (window.activeTargets[id].interval) clearInterval(window.activeTargets[id].interval);
-                    window.BoatTarget.removeLayer(window.activeTargets[id].marker);
+                    try { window.BoatTarget.removeLayer(window.activeTargets[id].marker); } catch (e) { }
                     delete window.activeTargets[id];
                     $('#target-item-' + id).remove();
                 }
@@ -5819,14 +5919,19 @@
                     if (window.followSimulation.interval) clearInterval(window.followSimulation.interval);
                     window.followSimulation = null;
                 }
-                if (window.Android && typeof window.Android.setSimulationMode === 'function') {
-                    window.Android.setSimulationMode(false);
-                }
                 window.isSimulatingPatrol = false;
                 try { localStorage.removeItem('patrolSimState'); } catch (e) { }
+                try { localStorage.removeItem('persistedFollows'); } catch (e) { }
                 $('#boat-follow-list').empty();
+
+                if (window.boatingControl && typeof window.boatingControl.removeBoatLayers === 'function') {
+                    try { window.boatingControl.removeBoatLayers(); } catch (e) { }
+                }
+                if (window.Android && typeof window.Android.setSimulationMode === 'function') {
+                    try { window.Android.setSimulationMode(false); } catch (e) { }
+                }
             }
-            window.savePersistedBoats();
+            try { window.savePersistedBoats(); } catch (e) { }
         };
         window.togglePauseBoat = function (type, id) {
             let boatObj = type === 'target' ? window.activeTargets[id] : window.followSimulation;
@@ -5835,6 +5940,24 @@
                 boatObj.data.isPaused = !boatObj.data.isPaused;
                 if (!boatObj.data.isPaused) {
                     boatObj.data.lastTime = Date.now();
+                    if (type === 'follow') {
+                        window.isSimulatingPatrol = true;
+                        if (window.Android && typeof window.Android.setSimulationMode === 'function') {
+                            window.Android.setSimulationMode(true);
+                        }
+                        if (window.boatingControl && typeof window.boatingControl.follow === 'function') {
+                            window.boatingControl.follow();
+                        }
+                    }
+                } else {
+                    if (type === 'follow') {
+                        if (window.Android && typeof window.Android.setSimulationMode === 'function') {
+                            window.Android.setSimulationMode(false);
+                        }
+                        if (window.boatingControl && typeof window.boatingControl.pause === 'function') {
+                            window.boatingControl.pause();
+                        }
+                    }
                 }
                 const iconClass = boatObj.data.isPaused ? 'fa-play' : 'fa-pause';
                 $('#' + type + '-playpause-' + id + ' i').attr('class', 'fa ' + iconClass);
@@ -5971,7 +6094,10 @@
         };
         window.followSimulation = null;
         window.renderFollowBoat = function (data) {
-            window.isSimulatingPatrol = true;
+            window.isSimulatingPatrol = !data.isPaused;
+            if (window.Android && typeof window.Android.setSimulationMode === 'function') {
+                window.Android.setSimulationMode(!data.isPaused);
+            }
             try { localStorage.setItem('patrolSimState', JSON.stringify({ name: data.name || 'เรือตรวจการณ์' })); } catch (e) { }
             if (window.boatingControl) {
                 window.boatingControl.sessionData = {
@@ -5985,8 +6111,10 @@
                 if (typeof window.boatingControl.startStopwatch === 'function') {
                     window.boatingControl.startStopwatch();
                 }
-                if (typeof window.boatingControl.follow === 'function') {
+                if (!data.isPaused && typeof window.boatingControl.follow === 'function') {
                     window.boatingControl.follow();
+                } else if (data.isPaused && typeof window.boatingControl.pause === 'function') {
+                    window.boatingControl.pause();
                 }
                 if (window.boatingControl.onDragStart && typeof map !== 'undefined') {
                     map.off('dragstart', window.boatingControl.onDragStart, window.boatingControl);

@@ -43,14 +43,16 @@
                 body: JSON.stringify({ username: user, password: pass })
             });
             const result = await response.json();
+            
             if (result.status === "success") {
                 if (isLogin && window.Android) {
                     window.Android.onLoginSuccess(
                         result.id, 
                         result.role, 
                         result.username, 
+                        result.name,   // <-- ADDED: Pass the name to Android
                         result.number,
-                        result.token // <-- NEW: Grabs the JWT from PHP and passes it to Kotlin
+                        result.token 
                     );
                 }
             } else {

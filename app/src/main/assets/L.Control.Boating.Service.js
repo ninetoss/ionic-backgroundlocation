@@ -246,6 +246,35 @@ L.Control.Boating = L.Control.extend({
     isLocating: function () { return this.icon.classList.contains('locating') },
     isFollowing: function () { return this.icon.classList.contains('following') },
     onClick: function () {
+        if (window.followSimulation && window.followSimulation.data) {
+            const data = window.followSimulation.data;
+            const id = data.id || 'sim';
+            if (!data.isPaused) {
+                data.isPaused = true;
+                if (window.Android && typeof window.Android.setSimulationMode === 'function') {
+                    window.Android.setSimulationMode(false);
+                }
+                $('#follow-playpause-' + id + ' i').attr('class', 'fa fa-play');
+                this.pause();
+                if (typeof window.savePersistedBoats === 'function') window.savePersistedBoats();
+                return;
+            } else {
+                data.isPaused = false;
+                data.lastTime = Date.now();
+                window.isSimulatingPatrol = true;
+                if (window.Android && typeof window.Android.setSimulationMode === 'function') {
+                    window.Android.setSimulationMode(true);
+                }
+                $('#follow-playpause-' + id + ' i').attr('class', 'fa fa-pause');
+                let boatLL = L.latLng(data.lat, data.lng);
+                if (this._map && typeof this._map.panTo === 'function') {
+                    this._map.panTo(boatLL);
+                }
+                this.follow();
+                if (typeof window.savePersistedBoats === 'function') window.savePersistedBoats();
+                return;
+            }
+        }
         if (window.activeSearchTrack && window.activeSearchTrack.name) {
             if (this.isFollowing()) {
                 if (window.activeSearchTrack.session) {
@@ -436,6 +465,29 @@ L.Control.Boating = L.Control.extend({
         this._map.options.doubleClickZoom = true;
         this.icon.classList.remove('requesting', 'following');
         this.icon.classList.add('locating');
+    },
+    removeBoatLayers: function () {
+        if (this._map) {
+            if (this.circle && this._map.hasLayer(this.circle)) this._map.removeLayer(this.circle);
+            if (this.linebg && this._map.hasLayer(this.linebg)) this._map.removeLayer(this.linebg);
+            if (this.line && this._map.hasLayer(this.line)) this._map.removeLayer(this.line);
+            if (this.boat && this._map.hasLayer(this.boat)) this._map.removeLayer(this.boat);
+            if (this.track && this._map.hasLayer(this.track)) this._map.removeLayer(this.track);
+            if (this.viewedRouteLayer && this._map.hasLayer(this.viewedRouteLayer)) this._map.removeLayer(this.viewedRouteLayer);
+            if (this.legend && this.legend._map) this._map.removeControl(this.legend);
+        }
+        if (window.simTrackingLine && this._map && this._map.hasLayer(window.simTrackingLine)) {
+            this._map.removeLayer(window.simTrackingLine);
+            window.simTrackingLine = null;
+        }
+        if (window.simEvasiveLine && this._map && this._map.hasLayer(window.simEvasiveLine)) {
+            this._map.removeLayer(window.simEvasiveLine);
+            window.simEvasiveLine = null;
+        }
+        if (this.track) this.track.setLatLngs([]);
+        if (this.icon) {
+            this.icon.classList.remove('requesting', 'following', 'locating');
+        }
     },
     onDragStart: function () {
         if (this.isFollowing()) {
